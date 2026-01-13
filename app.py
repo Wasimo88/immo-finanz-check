@@ -1,104 +1,153 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import json
 
 # --- KONFIGURATION ---
 st.set_page_config(page_title="Immo-Finanz Master", layout="wide")
 
 # ==========================================
-# 🔒 SICHERHEITS-CHECK (PASSWORT)
+# 🔒 SICHERHEITS-CHECK (LOGIC FIX)
 # ==========================================
 def check_password():
-    """Returns `True` if the user had the correct password."""
+    """Prüft das Passwort, zeigt Fehler nur nach Eingabe."""
 
     def password_entered():
-        """Checks whether a password entered by the user is correct."""
-        if st.session_state["password"] == st.secrets["password"]:
+        """Wird ausgeführt, wenn Enter gedrückt wird."""
+        if st.session_state["password_input"] == st.secrets["password"]:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # Don't store the password
+            # Passwort aus dem Speicher löschen für Sicherheit
+            del st.session_state["password_input"]
         else:
             st.session_state["password_correct"] = False
 
-    # Erstmaliger Start: Session State initialisieren
+    # Zustand initialisieren (noch nicht eingeloggt)
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
 
-    # Wenn Passwort schon korrekt war, direkt reinlassen
+    # Wenn eingeloggt -> Zugriff erlauben
     if st.session_state["password_correct"]:
         return True
 
-    # Eingabefeld zeigen
+    # Eingabemaske zeigen
     st.text_input(
-        "🔒 Bitte Passwort eingeben", type="password", on_change=password_entered, key="password"
+        "🔒 Bitte Passwort eingeben", 
+        type="password", 
+        on_change=password_entered, 
+        key="password_input"
     )
     
+    # Fehler NUR anzeigen, wenn das Passwort tatsächlich falsch gesetzt wurde (nach Eingabe)
+    # Wir prüfen, ob 'password_input' noch existiert oder nicht, um den Start-Fehler zu vermeiden
     if "password_correct" in st.session_state and st.session_state["password_correct"] == False:
-        st.error("😕 Passwort falsch")
+        # Kleiner Trick: Wir zeigen den Fehler nur, wenn der User schon was getippt hat
+        st.error("😕 Passwort falsch. Bitte erneut versuchen.")
 
     return False
 
 if not check_password():
-    st.stop()  # Hier stoppt die App, wenn kein Passwort da ist!
+    st.stop()  # App stoppt hier, solange Passwort nicht stimmt
 
 # ==========================================
-# AB HIER BEGINNT DEINE EIGENTLICHE APP
+# 💾 SPEICHERN & LADEN FUNKTION
+# ==========================================
+
+# Standard-Werte definieren (falls nichts geladen wird)
+defaults = {
+    "kinder": 1,
+    "gehalt_h": 3000,
+    "gehalt_p": 0,
+    "ek": 60000,
+    "immo_wert": 400000
+}
+
+# Funktion zum Laden von Daten in die Session
+def load_data(uploaded_file):
+    if uploaded_file is not None:
+        try:
+            data = json.load(uploaded_file)
+            for key, value in data.items():
+                st.session_state[key] = value
+            st.success("✅ Kundendaten erfolgreich geladen!")
+        except:
+            st.error("Fehler beim Laden der Datei.")
+
+# ==========================================
+# HAUPT-APP
 # ==========================================
 
 st.title("🏡 Profi-Finanzierungscheck")
-st.markdown("### Umfassende Haushalts- & Budgetanalyse")
+
+# --- DATEI UPLOAD (OBEN) ---
+with st.expander("📂 Kundendaten Speichern / Laden (gegen Datenverlust)", expanded=False):
+    col_dl, col_ul = st.columns(2)
+    
+    with col_ul:
+        uploaded_file = st.file_uploader("Alten Stand laden (.json)", type=["json"])
+        if uploaded_file:
+            load_data(uploaded_file)
+            
+    with col_dl:
+        st.write("Aktuellen Stand sichern:")
+        # Wir sammeln alle wichtigen Werte für den Download
+        # Hinweis: Das funktioniert erst, wenn die Widgets unten einmal gerendert wurden.
+        # Daher ist der Download-Button eigentlich besser am Ende der Sidebar aufgehoben,
+        # aber wir platzieren ihn hier als Platzhalter.
+        st.info("💡 Tipp: Lade deine Eingaben herunter, bevor du die Seite aktualisierst.")
 
 # --- SIDEBAR: EINGABEN ---
 st.sidebar.header("1. Haushalt & Familie")
-anzahl_erwachsene = st.sidebar.radio("Antragsteller", ["Alleinstehend", "Paar (2 Personen)"], index=1)
-anzahl_kinder = st.sidebar.number_input("Anzahl Kinder (unter 18)", value=1, step=1, min_value=0)
+
+# Wir nutzen jetzt 'key=...', damit Streamlit die Werte zuordnen kann
+anzahl_erwachsene = st.sidebar.radio("Antragsteller", ["Alleinstehend", "Paar (2 Personen)"], index=1, key="sb_erwachsene")
+anzahl_kinder = st.sidebar.number_input("Anzahl Kinder (unter 18)", value=defaults["kinder"], step=1, min_value=0, key="sb_kinder")
 
 # --- EXPERTEN-EINSTELLUNGEN ---
-with st.sidebar.expander("⚙️ Experten-Werte ändern (Kindergeld etc.)", expanded=False):
-    st.write("**Bank-Pauschalen & Sätze:**")
-    var_kindergeld = st.number_input("Kindergeld pro Kind (€)", value=250, step=10, min_value=0)
-    var_pauschale_single = st.number_input("Lebenshaltung Single (€)", value=1200, step=50, min_value=0)
-    var_pauschale_paar = st.number_input("Lebenshaltung Paar (€)", value=1600, step=50, min_value=0)
-    var_pauschale_kind = st.number_input("Lebenshaltung pro Kind (€)", value=400, step=25, min_value=0)
-    var_bewirtschaftung = st.number_input("Bewirtschaftung Neu (€)", value=450, step=50, min_value=0)
-    var_notar = st.number_input("Notar & Grundbuch (%)", value=2.0, step=0.1, min_value=0.0, format="%.2f")
+with st.sidebar.expander("⚙️ Experten-Werte ändern", expanded=False):
+    var_kindergeld = st.number_input("Kindergeld (€)", value=250, step=10, min_value=0, key="exp_kindergeld")
+    var_pauschale_single = st.number_input("LH Single (€)", value=1200, step=50, min_value=0, key="exp_p_single")
+    var_pauschale_paar = st.number_input("LH Paar (€)", value=1600, step=50, min_value=0, key="exp_p_paar")
+    var_pauschale_kind = st.number_input("LH Kind (€)", value=400, step=25, min_value=0, key="exp_p_kind")
+    var_bewirtschaftung = st.number_input("Bewirtschaftung (€)", value=450, step=50, min_value=0, key="exp_bewirt")
+    var_notar = st.number_input("Notar & Grundbuch (%)", value=2.0, step=0.1, min_value=0.0, format="%.2f", key="exp_notar")
 
-st.sidebar.header("2. Einnahmen (Monatlich Netto)")
-gehalt_haupt = st.sidebar.number_input("Gehalt Hauptverdiener", value=3000, step=50, min_value=0)
-gehalt_partner = st.sidebar.number_input("Gehalt Partner/in", value=1800, step=50, min_value=0) if anzahl_erwachsene == "Paar (2 Personen)" else 0
-nebeneinkommen = st.sidebar.number_input("Minijob / Nebentätigkeit", value=0, step=50, min_value=0)
-sonstiges_einkommen = st.sidebar.number_input("Sonstiges (Unterhalt, Pflegeg.)", value=0, step=50, min_value=0)
+st.sidebar.header("2. Einnahmen (Netto)")
+gehalt_haupt = st.sidebar.number_input("Gehalt Hauptverdiener", value=defaults["gehalt_h"], step=50, min_value=0, key="sb_gehalt_h")
+gehalt_partner = st.sidebar.number_input("Gehalt Partner/in", value=defaults["gehalt_p"], step=50, min_value=0, key="sb_gehalt_p") if anzahl_erwachsene == "Paar (2 Personen)" else 0
+nebeneinkommen = st.sidebar.number_input("Minijob / Nebentätigkeit", value=0, step=50, min_value=0, key="sb_neben")
+sonstiges_einkommen = st.sidebar.number_input("Sonstiges", value=0, step=50, min_value=0, key="sb_sonst")
 
 kindergeld_betrag = anzahl_kinder * var_kindergeld
 
-st.sidebar.header("3. Immobilien-Bestand (V+V)")
-hat_bestand = st.sidebar.checkbox("Vermietung oder Verpachtung vorhanden?", value=True)
+st.sidebar.header("3. Immobilien-Bestand")
+hat_bestand = st.sidebar.checkbox("Vermietung vorhanden?", value=True, key="sb_hat_bestand")
 
 anrechenbare_miete = 0.0
 bestand_rate = 0.0
 
 if hat_bestand:
-    with st.sidebar.expander("Details Bestandsobjekte", expanded=True):
-        miete_kalt_pacht = st.number_input("Kaltmiete / Pacht-Einnahmen", value=1200, step=50, min_value=0)
-        bestand_rate = st.number_input("Rate für Bestands-Kredite", value=800, step=50, min_value=0)
-        haircut = st.slider("Bank-Ansatz (%)", 60, 90, 75)
+    with st.sidebar.expander("Details Bestand", expanded=True):
+        miete_kalt_pacht = st.number_input("Kaltmiete Einnahmen", value=1200, step=50, min_value=0, key="sb_miete")
+        bestand_rate = st.number_input("Rate Bestands-Kredit", value=800, step=50, min_value=0, key="sb_bestand_rate")
+        haircut = st.slider("Bank-Ansatz Miete (%)", 60, 90, 75, key="sb_haircut")
         anrechenbare_miete = miete_kalt_pacht * (haircut / 100)
         st.caption(f"Bank rechnet an: {anrechenbare_miete:.2f} €")
 
 st.sidebar.header("4. Eigenkapital & Markt")
-eigenkapital = st.sidebar.number_input("Eigenkapital (Cash/Depot)", value=60000, step=1000, min_value=0)
-zins_satz = st.sidebar.number_input("Sollzins (%)", value=3.8, step=0.1, min_value=0.1, format="%.2f")
-tilgung_satz = st.sidebar.number_input("Tilgung (%)", value=2.0, step=0.1, min_value=0.0, format="%.2f")
+eigenkapital = st.sidebar.number_input("Eigenkapital", value=defaults["ek"], step=1000, min_value=0, key="sb_ek")
+zins_satz = st.sidebar.number_input("Sollzins (%)", value=3.8, step=0.1, min_value=0.1, format="%.2f", key="sb_zins")
+tilgung_satz = st.sidebar.number_input("Tilgung (%)", value=2.0, step=0.1, min_value=0.0, format="%.2f", key="sb_tilgung")
 
 st.sidebar.header("5. Kaufnebenkosten")
-grunderwerbsteuer_prozent = st.sidebar.number_input("Grunderwerbsteuer (%)", value=6.5, step=0.5, min_value=0.0, format="%.2f")
-makler_prozent = st.sidebar.number_input("Makler (%)", value=3.57, step=0.5, min_value=0.0, format="%.2f")
+grunderwerbsteuer_prozent = st.sidebar.number_input("Grunderwerbsteuer (%)", value=6.5, step=0.5, min_value=0.0, format="%.2f", key="sb_grunderwerb")
+makler_prozent = st.sidebar.number_input("Makler (%)", value=3.57, step=0.5, min_value=0.0, format="%.2f", key="sb_makler")
 
 # --- BERECHNUNG ---
 basis_pauschale = var_pauschale_paar if anzahl_erwachsene == "Paar (2 Personen)" else var_pauschale_single
 kinder_pauschale_gesamt = anzahl_kinder * var_pauschale_kind
 gesamt_lebenshaltung = basis_pauschale + kinder_pauschale_gesamt
 puffer = 250 
-konsum_kredite = st.sidebar.number_input("Raten Konsumkredite (Auto etc.)", value=0, step=50, min_value=0)
+konsum_kredite = st.sidebar.number_input("Konsumkredite (Auto)", value=0, step=50, min_value=0, key="sb_konsum")
 
 total_einnahmen = gehalt_haupt + gehalt_partner + nebeneinkommen + sonstiges_einkommen + kindergeld_betrag + anrechenbare_miete
 total_ausgaben = gesamt_lebenshaltung + bestand_rate + konsum_kredite + var_bewirtschaftung + puffer
@@ -116,6 +165,37 @@ else:
 nebenkosten_faktor = (grunderwerbsteuer_prozent + var_notar + makler_prozent) / 100 
 gesamt_budget = max_darlehen + eigenkapital
 max_kaufpreis = gesamt_budget / (1 + nebenkosten_faktor)
+
+# --- DOWNLOAD BUTTON LOGIK (Jetzt wo alle Werte da sind) ---
+export_data = {
+    "sb_erwachsene": anzahl_erwachsene,
+    "sb_kinder": anzahl_kinder,
+    "sb_gehalt_h": gehalt_haupt,
+    "sb_gehalt_p": gehalt_partner,
+    "sb_neben": nebeneinkommen,
+    "sb_sonst": sonstiges_einkommen,
+    "sb_hat_bestand": hat_bestand,
+    # Wir speichern nur Bestandswerte wenn Bestand aktiv ist, sonst Standard 0
+    "sb_miete": miete_kalt_pacht if hat_bestand else 0,
+    "sb_bestand_rate": bestand_rate if hat_bestand else 0,
+    "sb_ek": eigenkapital,
+    "sb_zins": zins_satz,
+    "sb_tilgung": tilgung_satz,
+    "sb_grunderwerb": grunderwerbsteuer_prozent,
+    "sb_makler": makler_prozent,
+    "sb_konsum": konsum_kredite
+}
+json_string = json.dumps(export_data)
+
+# Wir packen den Button oben in den Expander rein (nachträglich)
+with col_dl:
+    st.download_button(
+        label="💾 Daten sichern (JSON)",
+        data=json_string,
+        file_name="kunden_daten.json",
+        mime="application/json",
+        help="Lade diese Datei herunter, um die Eingaben später wiederherzustellen."
+    )
 
 # --- ANZEIGE ---
 col1, col2 = st.columns([1, 1])
@@ -153,7 +233,7 @@ with col2:
 
 st.divider()
 
-# Grafik (Mobil-Optimiert: staticPlot=True)
+# Grafik (Mobil-Optimiert)
 fig = px.bar(
     x=["Einnahmen", "Ausgaben", "Frei"],
     y=[total_einnahmen, total_ausgaben, max(freier_betrag, 0)],
@@ -162,6 +242,4 @@ fig = px.bar(
     title="Liquiditäts-Check"
 )
 fig.update_layout(showlegend=False)
-
-# HIER IST DER FIX FÜR DAS HANDY:
 st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
