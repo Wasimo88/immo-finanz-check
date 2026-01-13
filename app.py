@@ -11,7 +11,6 @@ st.set_page_config(page_title="Immo-Finanz Master", layout="wide")
 # 🛠 HELFER: DEUTSCHE ZAHLENFORMATIERUNG
 # ==========================================
 def eur(wert):
-    """Wandelt 1234.56 in '1.234,56 €' um"""
     return f"{wert:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
 
 # ==========================================
@@ -174,7 +173,7 @@ def create_pdf(data):
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# 💾 SPEICHERN & LADEN (FIXED)
+# 💾 SPEICHERN & LADEN (FIXED MIT CALLBACK)
 # ==========================================
 defaults = {
     "kinder": 1,
@@ -185,18 +184,19 @@ defaults = {
     "aktuelle_miete": 1000
 }
 
-def load_data(uploaded_file):
-    if uploaded_file is not None:
+# Diese Funktion wird NUR aufgerufen, wenn sich am Datei-Upload was ändert
+def load_data_callback():
+    # Wir holen uns die Datei direkt über den Schlüssel 'json_loader'
+    uploaded = st.session_state.get('json_loader')
+    if uploaded is not None:
         try:
-            data = json.load(uploaded_file)
+            data = json.load(uploaded)
             for key, value in data.items():
                 st.session_state[key] = value
+            # Ein kleiner Toast-Hinweis (unten rechts), dass es geklappt hat
+            st.toast("✅ Daten erfolgreich geladen!", icon="🎉")
         except Exception as e:
-            st.error(f"Fehler: {e}")
-            return
-
-        st.success(f"✅ Daten erfolgreich geladen!")
-        st.rerun()
+            st.error(f"Fehler beim Lesen der Datei: {e}")
 
 # ==========================================
 # HAUPT-APP UI
@@ -207,12 +207,17 @@ st.title("🏡 Profi-Finanzierungscheck")
 with st.expander("📂 Daten Speichern / Laden", expanded=False):
     col_dl, col_ul = st.columns(2)
     with col_ul:
-        uploaded_file = st.file_uploader("JSON laden", type=["json"])
-        if uploaded_file:
-            load_data(uploaded_file)
+        # HIER IST DER FIX: on_change=load_data_callback
+        st.file_uploader(
+            "JSON laden", 
+            type=["json"], 
+            key="json_loader", 
+            on_change=load_data_callback
+        )
+        
     with col_dl:
         st.write("Sicherung:")
-        st.info("Button ist unten in der Sidebar!")
+        st.info("Speichern-Button ist unten in der Sidebar!")
 
 # --- SIDEBAR ---
 st.sidebar.header("1. Projekt-Daten")
@@ -422,7 +427,6 @@ with col2:
                 col_b.error("❌ ZU TEUER")
                 st.caption(f"Fehlt: {eur(wunsch_rate - freier_betrag)}")
             
-            # --- HIER IST DIE LISTE ZURÜCK! ---
             with st.expander("Details zur Rechnung", expanded=True):
                 st.write(f"Kaufpreis: {eur(wunsch_kaufpreis)}")
                 st.write(f"• Nebenkosten: {eur(wunsch_nebenkosten)}")
