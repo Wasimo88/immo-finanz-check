@@ -47,7 +47,8 @@ defaults = {
     "gehalt_h": 3000,
     "gehalt_p": 0,
     "ek": 60000,
-    "kunde": "Kunde" # Default Name
+    "kunde": "Kunde",
+    "aktuelle_miete": 1000
 }
 
 def load_data(uploaded_file):
@@ -70,25 +71,52 @@ st.title("🏡 Profi-Finanzierungscheck")
 # --- DATEI UPLOAD ---
 with st.expander("📂 Kundendaten Speichern / Laden", expanded=False):
     col_dl, col_ul = st.columns(2)
-    
     with col_ul:
         uploaded_file = st.file_uploader("Alten Stand laden (.json)", type=["json"])
         if uploaded_file:
             load_data(uploaded_file)
-            
     with col_dl:
-        st.write("Aktuellen Stand sichern:")
-        st.info("Der Dateiname wird unten automatisch aus dem Kundennamen generiert.")
+        st.write("Sicherung:")
+        st.info("Speichern-Button ist unten in der Sidebar!")
 
-# --- SIDEBAR: EINGABEN ---
-st.sidebar.header("1. Kunden-Daten")
+# ==========================================
+# SIDEBAR
+# ==========================================
+st.sidebar.header("1. Projekt-Daten")
+kunden_name = st.sidebar.text_input("Name des Kunden", value=defaults["kunde"], key="sb_name")
 
-# NEU: KUNDENNAME FÜR DATEINAME
-kunden_name = st.sidebar.text_input("Name des Kunden / Objekts", value=defaults["kunde"], key="sb_name", help="Wird für den Dateinamen beim Speichern verwendet.")
+# --- NEU: 3-WEGE NUTZUNGSART ---
+nutzungsart = st.sidebar.radio(
+    "Verwendungszweck", 
+    [
+        "Eigenheim (Nur Selbstbezug)", 
+        "Eigenheim mit Vermietung (Einliegerw./MFH)", 
+        "Kapitalanlage (Reine Vermietung)"
+    ], 
+    key="sb_nutzung"
+)
+
+# Eingabe-Logik basierend auf Auswahl
+aktuelle_warmmiete = 0.0
+neue_miete_einnahme = 0.0
+
+if nutzungsart == "Eigenheim (Nur Selbstbezug)":
+    st.sidebar.info("ℹ️ Alte Miete fällt weg. Keine neuen Mieteinnahmen.")
+    aktuelle_warmmiete = st.sidebar.number_input("Vergleich: Aktuelle Warmmiete", value=defaults["aktuelle_miete"], step=50, key="sb_akt_miete")
+
+elif nutzungsart == "Eigenheim mit Vermietung (Einliegerw./MFH)":
+    st.sidebar.success("ℹ️ Alte Miete fällt weg. ZUSÄTZLICHE Einnahmen durch Vermietung!")
+    aktuelle_warmmiete = st.sidebar.number_input("Vergleich: Aktuelle Warmmiete", value=defaults["aktuelle_miete"], step=50, key="sb_akt_miete")
+    neue_miete_einnahme = st.sidebar.number_input("Geplante Mieteinnahme (Kalt)", value=500, step=50, key="sb_neue_miete_mix")
+
+elif nutzungsart == "Kapitalanlage (Reine Vermietung)":
+    st.sidebar.warning("ℹ️ Alte Miete bleibt als Belastung bestehen.")
+    aktuelle_warmmiete = st.sidebar.number_input("Aktuelle Warmmiete (Muss weiter gezahlt werden)", value=defaults["aktuelle_miete"], step=50, key="sb_akt_miete")
+    neue_miete_einnahme = st.sidebar.number_input("Geplante Mieteinnahme (Kalt)", value=600, step=50, key="sb_neue_miete_ka")
+
 
 st.sidebar.markdown("---")
 st.sidebar.header("2. Haushalt & Familie")
-
 anzahl_erwachsene = st.sidebar.radio("Antragsteller", ["Alleinstehend", "Paar (2 Personen)"], index=1, key="sb_erwachsene")
 anzahl_kinder = st.sidebar.number_input("Anzahl Kinder", value=defaults["kinder"], step=1, min_value=0, key="sb_kinder")
 
@@ -97,7 +125,8 @@ with st.sidebar.expander("⚙️ Experten-Werte", expanded=False):
     var_pauschale_single = st.number_input("LH Single (€)", value=1200, step=50, min_value=0, key="exp_p_single")
     var_pauschale_paar = st.number_input("LH Paar (€)", value=1600, step=50, min_value=0, key="exp_p_paar")
     var_pauschale_kind = st.number_input("LH Kind (€)", value=400, step=25, min_value=0, key="exp_p_kind")
-    var_bewirtschaftung = st.number_input("Bewirtschaftung (€)", value=450, step=50, min_value=0, key="exp_bewirt")
+    var_bewirtschaftung = st.number_input("Bewirtschaftung Neu (€)", value=450, step=50, min_value=0, key="exp_bewirt")
+    var_haircut_neu = st.number_input("Risikoabschlag Miete Neu (%)", value=80, step=5, max_value=100, key="exp_haircut_neu")
     var_notar = st.number_input("Notar (%)", value=2.0, step=0.1, min_value=0.0, format="%.2f", key="exp_notar")
 
 st.sidebar.header("3. Einnahmen (Netto)")
@@ -106,21 +135,19 @@ gehalt_partner = st.sidebar.number_input("Gehalt Partner/in", value=defaults["ge
 nebeneinkommen = st.sidebar.number_input("Minijob / Nebentätigkeit", value=0, step=50, min_value=0, key="sb_neben")
 sonstiges_einkommen = st.sidebar.number_input("Sonstiges", value=0, step=50, min_value=0, key="sb_sonst")
 
-kindergeld_betrag = anzahl_kinder * var_kindergeld
+st.sidebar.header("4. Bestands-Immobilien")
+hat_bestand = st.sidebar.checkbox("Schon Immobilien vorhanden?", value=False, key="sb_hat_bestand")
 
-st.sidebar.header("4. Immobilien-Bestand")
-hat_bestand = st.sidebar.checkbox("Vermietung vorhanden?", value=True, key="sb_hat_bestand")
-
-anrechenbare_miete = 0.0
+anrechenbare_miete_bestand = 0.0
 bestand_rate = 0.0
+miete_kalt_pacht = 0.0
 
 if hat_bestand:
     with st.sidebar.expander("Details Bestand", expanded=True):
-        miete_kalt_pacht = st.number_input("Kaltmiete Einnahmen", value=1200, step=50, min_value=0, key="sb_miete")
-        bestand_rate = st.number_input("Rate Bestands-Kredit", value=800, step=50, min_value=0, key="sb_bestand_rate")
+        miete_kalt_pacht = st.number_input("Kaltmiete Einnahmen", value=0, step=50, min_value=0, key="sb_miete")
+        bestand_rate = st.number_input("Rate Bestands-Kredit", value=0, step=50, min_value=0, key="sb_bestand_rate")
         haircut = st.slider("Bank-Ansatz Miete (%)", 60, 90, 75, key="sb_haircut")
-        anrechenbare_miete = miete_kalt_pacht * (haircut / 100)
-        st.caption(f"Bank rechnet an: {anrechenbare_miete:.2f} €")
+        anrechenbare_miete_bestand = miete_kalt_pacht * (haircut / 100)
 
 st.sidebar.header("5. Eigenkapital & Markt")
 eigenkapital = st.sidebar.number_input("Eigenkapital", value=defaults["ek"], step=1000, min_value=0, key="sb_ek")
@@ -130,24 +157,58 @@ tilgung_satz = st.sidebar.number_input("Tilgung (%)", value=2.0, step=0.1, min_v
 st.sidebar.header("6. Kaufnebenkosten")
 grunderwerbsteuer_prozent = st.sidebar.number_input("Grunderwerbsteuer (%)", value=6.5, step=0.5, min_value=0.0, format="%.2f", key="sb_grunderwerb")
 makler_prozent = st.sidebar.number_input("Makler (%)", value=3.57, step=0.5, min_value=0.0, format="%.2f", key="sb_makler")
+konsum_kredite = st.sidebar.number_input("Konsumkredite (Auto etc.)", value=0, step=50, min_value=0, key="sb_konsum")
 
-# --- BERECHNUNG ---
+# ==========================================
+# LOGIK & BERECHNUNG
+# ==========================================
+
+# 1. Pauschalen
 basis_pauschale = var_pauschale_paar if anzahl_erwachsene == "Paar (2 Personen)" else var_pauschale_single
 kinder_pauschale_gesamt = anzahl_kinder * var_pauschale_kind
-gesamt_lebenshaltung = basis_pauschale + kinder_pauschale_gesamt
+kindergeld_betrag = anzahl_kinder * var_kindergeld
 puffer = 250 
-konsum_kredite = st.sidebar.number_input("Konsumkredite (Auto)", value=0, step=50, min_value=0, key="sb_konsum")
 
-total_einnahmen = gehalt_haupt + gehalt_partner + nebeneinkommen + sonstiges_einkommen + kindergeld_betrag + anrechenbare_miete
-total_ausgaben = gesamt_lebenshaltung + bestand_rate + konsum_kredite + var_bewirtschaftung + puffer
+# 2. Nutzungsart-Logik (DAS IST DAS HERZSTÜCK)
+belastung_durch_aktuelle_miete = 0.0
+einnahme_neues_objekt_kalkuliert = 0.0
+
+# Fallunterscheidung
+if nutzungsart == "Kapitalanlage (Reine Vermietung)":
+    # Miete bleibt als Belastung
+    belastung_durch_aktuelle_miete = aktuelle_warmmiete
+    # Neue Miete kommt dazu
+    einnahme_neues_objekt_kalkuliert = neue_miete_einnahme * (var_haircut_neu / 100)
+
+elif nutzungsart == "Eigenheim mit Vermietung (Einliegerw./MFH)":
+    # Alte Miete fällt weg (Belastung 0)
+    belastung_durch_aktuelle_miete = 0.0
+    # Neue Miete kommt DAZU (Einliegerwohnung)
+    einnahme_neues_objekt_kalkuliert = neue_miete_einnahme * (var_haircut_neu / 100)
+
+else: # "Eigenheim (Nur Selbstbezug)"
+    # Alte Miete fällt weg
+    belastung_durch_aktuelle_miete = 0.0
+    # Keine neue Miete
+    einnahme_neues_objekt_kalkuliert = 0.0
+
+
+# 3. Summen
+total_einnahmen = (gehalt_haupt + gehalt_partner + nebeneinkommen + 
+                   sonstiges_einkommen + kindergeld_betrag + 
+                   anrechenbare_miete_bestand + einnahme_neues_objekt_kalkuliert)
+
+gesamt_lebenshaltung = basis_pauschale + kinder_pauschale_gesamt
+
+total_ausgaben = (gesamt_lebenshaltung + bestand_rate + konsum_kredite + 
+                  var_bewirtschaftung + puffer + belastung_durch_aktuelle_miete)
+
 freier_betrag = total_einnahmen - total_ausgaben
 
+# 4. Finanzierung
 if freier_betrag > 0:
     annuitaet = zins_satz + tilgung_satz
-    if annuitaet > 0:
-        max_darlehen = (freier_betrag * 12 * 100) / annuitaet
-    else:
-        max_darlehen = 0
+    max_darlehen = (freier_betrag * 12 * 100) / annuitaet if annuitaet > 0 else 0
 else:
     max_darlehen = 0
 
@@ -155,9 +216,15 @@ nebenkosten_faktor = (grunderwerbsteuer_prozent + var_notar + makler_prozent) / 
 gesamt_budget = max_darlehen + eigenkapital
 max_kaufpreis = gesamt_budget / (1 + nebenkosten_faktor)
 
-# --- DOWNLOAD BUTTON LOGIK (MIT NAMENS-GENERATOR) ---
+# ==========================================
+# DOWNLOAD BUTTON
+# ==========================================
 export_data = {
-    "sb_name": kunden_name, # Name mit speichern
+    "sb_name": kunden_name,
+    "sb_nutzung": nutzungsart,
+    "sb_akt_miete": aktuelle_warmmiete,
+    "sb_neue_miete_mix": neue_miete_einnahme if nutzungsart == "Eigenheim mit Vermietung (Einliegerw./MFH)" else 0,
+    "sb_neue_miete_ka": neue_miete_einnahme if nutzungsart == "Kapitalanlage (Reine Vermietung)" else 0,
     "sb_erwachsene": anzahl_erwachsene,
     "sb_kinder": anzahl_kinder,
     "sb_gehalt_h": gehalt_haupt,
@@ -175,58 +242,86 @@ export_data = {
     "sb_konsum": konsum_kredite
 }
 json_string = json.dumps(export_data)
-
-# Dateiname bereinigen (Leerzeichen zu Unterstrichen)
 safe_filename = f"{kunden_name.replace(' ', '_')}_Finanzcheck.json"
 
 with col_dl:
     st.download_button(
-        label=f"💾 '{safe_filename}' speichern", # Button zeigt jetzt den Namen an!
+        label=f"💾 '{safe_filename}' speichern",
         data=json_string,
         file_name=safe_filename,
         mime="application/json"
     )
 
-# --- ANZEIGE ---
+# ==========================================
+# ANZEIGE
+# ==========================================
+st.divider()
+st.markdown(f"### 🎯 Analyse für: {kunden_name}")
+st.caption(f"Szenario: {nutzungsart}")
+
 col1, col2 = st.columns([1, 1])
 
 with col1:
-    st.subheader(f"💰 Analyse für: {kunden_name}") # Name auch hier anzeigen
+    st.subheader("💰 Haushaltsrechnung")
     
-    st.markdown("**Einnahmen (monatlich)**")
-    df_in = pd.DataFrame({
-        "Posten": ["Gehalt Haupt", "Gehalt Partner", f"Kindergeld", "Minijob/Sonst.", "V+V (bereinigt)"],
-        "Betrag": [gehalt_haupt, gehalt_partner, kindergeld_betrag, nebeneinkommen+sonstiges_einkommen, anrechenbare_miete]
-    })
+    # Einnahmen
+    df_in_dict = {
+        "Posten": ["Gehalt Haupt", "Gehalt Partner", "Kindergeld", "Sonstiges", "Miete Bestand (netto)", "Miete Neu (kalk.)"],
+        "Betrag": [gehalt_haupt, gehalt_partner, kindergeld_betrag, nebeneinkommen+sonstiges_einkommen, anrechenbare_miete_bestand, einnahme_neues_objekt_kalkuliert]
+    }
+    df_in = pd.DataFrame(df_in_dict)
     df_in = df_in[df_in["Betrag"] > 0.01]
     st.dataframe(df_in, hide_index=True, use_container_width=True)
-    st.info(f"Gesamteinnahmen: **{total_einnahmen:,.2f} €**")
+    st.success(f"Summe Einnahmen: **{total_einnahmen:,.2f} €**")
 
-    st.markdown("**Ausgaben**")
-    df_out = pd.DataFrame({
-        "Posten": ["Lebenshaltung", "Lebenshaltung Kinder", "Rate Bestand", "Konsumkredite", "Bewirtschaftung (Neu)", "Puffer"],
-        "Betrag": [basis_pauschale, kinder_pauschale_gesamt, bestand_rate, konsum_kredite, var_bewirtschaftung, puffer]
-    })
+    # Ausgaben
+    st.markdown("---")
+    ausgaben_liste = [
+        ("Lebenshaltung", gesamt_lebenshaltung),
+        ("Rate Bestand", bestand_rate),
+        ("Konsumkredite", konsum_kredite),
+        ("Aktuelle Miete (bleibt)", belastung_durch_aktuelle_miete),
+        ("Bewirtschaftung (Neu)", var_bewirtschaftung),
+        ("Sicherheits-Puffer", puffer)
+    ]
+    
+    df_out = pd.DataFrame(ausgaben_liste, columns=["Posten", "Betrag"])
     df_out = df_out[df_out["Betrag"] > 0.01]
     st.dataframe(df_out, hide_index=True, use_container_width=True)
-    st.error(f"Gesamtbelastung: **{total_ausgaben:,.2f} €**")
+    st.error(f"Summe Ausgaben: **{total_ausgaben:,.2f} €**")
+
+    # Hinweise
+    if belastung_durch_aktuelle_miete > 0:
+        st.caption("ℹ️ Die aktuelle Miete bleibt als Belastung, da nicht selbst eingezogen wird.")
+    if einnahme_neues_objekt_kalkuliert > 0:
+        st.info(f"ℹ️ Die neue Mieteinnahme ({neue_miete_einnahme}€) wurde mit {var_haircut_neu}% Risikoabschlag eingerechnet.")
 
 with col2:
-    st.subheader("🏠 Ergebnis")
+    st.subheader("🏠 Ergebnis: Machbarkeit")
+    
     if freier_betrag < 0:
-        st.warning(f"⚠️ **Budget überschritten!**\n\nFehlbetrag: {abs(freier_betrag):,.2f} €")
+        st.warning(f"⚠️ **Budget nicht ausreichend!**\n\nFehlbetrag: {abs(freier_betrag):,.2f} €")
     else:
-        st.success(f"Verfügbar für neue Rate: **{freier_betrag:,.2f} €**")
-        st.markdown("### Maximaler Kaufpreis")
-        st.metric(label="Immobilienwert", value=f"{max_kaufpreis:,.0f} €")
+        st.metric(label="Verfügbarer Betrag (Rate)", value=f"{freier_betrag:,.2f} €")
+        
+        # VERGLEICH RATE vs ALTE MIETE (Nur bei Eigenheim relevant)
+        if "Eigenheim" in nutzungsart and aktuelle_warmmiete > 0:
+            diff = freier_betrag - aktuelle_warmmiete
+            if diff > 0:
+                st.info(f"Rate ist **{diff:,.2f} € höher** als deine jetzige Warmmiete.")
+            else:
+                st.info(f"Rate ist **{abs(diff):,.2f} € niedriger** als deine jetzige Warmmiete.")
+        
+        st.markdown("### Maximaler Immobilienpreis")
+        st.metric(label="Kaufpreis", value=f"{max_kaufpreis:,.0f} €")
         nk_wert = max_kaufpreis * nebenkosten_faktor
-        st.caption(f"Inkl. {nk_wert:,.0f} € Kaufnebenkosten")
+        st.write(f"+ Kaufnebenkosten: {nk_wert:,.0f} €")
+        st.write(f"+ Eigenkapital: {eigenkapital:,.0f} €")
+        st.markdown(f"**= Gesamtinvestition: {max_kaufpreis + nk_wert:,.0f} €**")
         st.markdown("---")
-        st.write(f"**Benötigtes Bankdarlehen: {max_darlehen:,.0f} €**")
+        st.write(f"🏦 Benötigtes Darlehen: **{max_darlehen:,.0f} €**")
 
 st.divider()
-
-# Grafik (Mobil-Optimiert)
 fig = px.bar(
     x=["Einnahmen", "Ausgaben", "Frei"],
     y=[total_einnahmen, total_ausgaben, max(freier_betrag, 0)],
