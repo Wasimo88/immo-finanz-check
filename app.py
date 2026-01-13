@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import json
+from fpdf import FPDF
+import io
 
 # --- KONFIGURATION ---
 st.set_page_config(page_title="Immo-Finanz Master", layout="wide")
@@ -39,7 +41,79 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 💾 SPEICHERN & LADEN LOGIK
+# 📄 PDF GENERATOR FUNKTION
+# ==========================================
+def create_pdf(data_dict):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    
+    # Hilfsfunktion für Umlaute (FPDF hat Probleme mit äöü)
+    def txt(text):
+        return text.encode('latin-1', 'replace').decode('latin-1')
+
+    # Titel
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(200, 10, txt("Finanzierungs-Zertifikat"), ln=True, align='C')
+    pdf.ln(10)
+
+    # Kunden Info
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 10, txt(f"Kunde / Objekt: {data_dict['name']}"), ln=True)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(0, 10, txt(f"Szenario: {data_dict['scenario']}"), ln=True)
+    pdf.ln(5)
+
+    # Finanzielle Eckdaten
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(0, 10, txt("1. Haushaltsrechnung (Monatlich)"), ln=True)
+    pdf.set_font("Arial", "", 12)
+    
+    # Tabelle simulieren
+    pdf.cell(100, 8, txt("Gesamteinnahmen:"), 0)
+    pdf.cell(50, 8, txt(f"{data_dict['ein']:,.2f} EUR"), 0, 1, 'R')
+    
+    pdf.cell(100, 8, txt("Gesamtausgaben (Pauschalen):"), 0)
+    pdf.cell(50, 8, txt(f"- {data_dict['aus']:,.2f} EUR"), 0, 1, 'R')
+    
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(100, 10, txt("Verfügbar für Rate (Budget):"), 0)
+    pdf.cell(50, 10, txt(f"{data_dict['frei']:,.2f} EUR"), 0, 1, 'R')
+    pdf.ln(5)
+
+    # Ergebnis
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(0, 10, txt("2. Machbarkeit & Kaufpreis"), ln=True)
+    pdf.set_font("Arial", "", 12)
+
+    pdf.cell(100, 8, txt(f"Zinssatz: {data_dict['zins']}% | Tilgung: {data_dict['tilg']}%"), 0, 1)
+    
+    pdf.set_fill_color(230, 230, 230) # Grau hinterlegt
+    pdf.cell(100, 10, txt("Maximaler Kaufpreis:"), 1, 0, 'L', True)
+    pdf.cell(50, 10, txt(f"{data_dict['kaufpreis']:,.0f} EUR"), 1, 1, 'R', True)
+    
+    pdf.cell(100, 10, txt("Kaufnebenkosten (ca.):"), 1, 0, 'L')
+    pdf.cell(50, 10, txt(f"{data_dict['nk']:,.0f} EUR"), 1, 1, 'R')
+    
+    pdf.cell(100, 10, txt("Eigenkapital Einsatz:"), 1, 0, 'L')
+    pdf.cell(50, 10, txt(f"{data_dict['ek']:,.0f} EUR"), 1, 1, 'R')
+
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(100, 10, txt("Benötigtes Bankdarlehen:"), 1, 0, 'L')
+    pdf.cell(50, 10, txt(f"{data_dict['kredit']:,.0f} EUR"), 1, 1, 'R')
+    
+    pdf.ln(10)
+    pdf.cell(0, 10, txt(f"--> Monatliche Rate: {data_dict['frei']:,.2f} EUR"), ln=True, align='C')
+
+    # Disclaimer
+    pdf.ln(20)
+    pdf.set_font("Arial", "I", 8)
+    pdf.multi_cell(0, 5, txt("Hinweis: Dies ist eine unverbindliche Modellrechnung auf Basis Ihrer Angaben. Sie stellt keine Kreditzusage dar. Maßgeblich sind die Konditionen der Bank zum Zeitpunkt der Antragstellung."))
+
+    return pdf.output(dest='S').encode('latin-1')
+
+# ==========================================
+# 💾 JSON SPEICHERN & LADEN
 # ==========================================
 
 defaults = {
@@ -57,22 +131,22 @@ def load_data(uploaded_file):
             data = json.load(uploaded_file)
             for key, value in data.items():
                 st.session_state[key] = value
-            st.success(f"✅ Daten für '{data.get('sb_name', 'Unbekannt')}' geladen!")
+            st.success(f"✅ Daten geladen!")
             st.rerun()
         except:
-            st.error("Fehler beim Laden der Datei.")
+            st.error("Fehler beim Laden.")
 
 # ==========================================
-# HAUPT-APP
+# HAUPT-APP UI
 # ==========================================
 
 st.title("🏡 Profi-Finanzierungscheck")
 
 # --- DATEI UPLOAD ---
-with st.expander("📂 Kundendaten Speichern / Laden", expanded=False):
+with st.expander("📂 Daten Speichern / Laden", expanded=False):
     col_dl, col_ul = st.columns(2)
     with col_ul:
-        uploaded_file = st.file_uploader("Alten Stand laden (.json)", type=["json"])
+        uploaded_file = st.file_uploader("JSON laden", type=["json"])
         if uploaded_file:
             load_data(uploaded_file)
     with col_dl:
@@ -85,7 +159,6 @@ with st.expander("📂 Kundendaten Speichern / Laden", expanded=False):
 st.sidebar.header("1. Projekt-Daten")
 kunden_name = st.sidebar.text_input("Name des Kunden", value=defaults["kunde"], key="sb_name")
 
-# --- NEU: 3-WEGE NUTZUNGSART ---
 nutzungsart = st.sidebar.radio(
     "Verwendungszweck", 
     [
@@ -96,24 +169,20 @@ nutzungsart = st.sidebar.radio(
     key="sb_nutzung"
 )
 
-# Eingabe-Logik basierend auf Auswahl
 aktuelle_warmmiete = 0.0
 neue_miete_einnahme = 0.0
 
 if nutzungsart == "Eigenheim (Nur Selbstbezug)":
-    st.sidebar.info("ℹ️ Alte Miete fällt weg. Keine neuen Mieteinnahmen.")
+    st.sidebar.info("ℹ️ Alte Miete fällt weg.")
     aktuelle_warmmiete = st.sidebar.number_input("Vergleich: Aktuelle Warmmiete", value=defaults["aktuelle_miete"], step=50, key="sb_akt_miete")
-
 elif nutzungsart == "Eigenheim mit Vermietung (Einliegerw./MFH)":
-    st.sidebar.success("ℹ️ Alte Miete fällt weg. ZUSÄTZLICHE Einnahmen durch Vermietung!")
+    st.sidebar.success("ℹ️ ZUSÄTZLICHE Einnahmen durch Vermietung!")
     aktuelle_warmmiete = st.sidebar.number_input("Vergleich: Aktuelle Warmmiete", value=defaults["aktuelle_miete"], step=50, key="sb_akt_miete")
     neue_miete_einnahme = st.sidebar.number_input("Geplante Mieteinnahme (Kalt)", value=500, step=50, key="sb_neue_miete_mix")
-
 elif nutzungsart == "Kapitalanlage (Reine Vermietung)":
-    st.sidebar.warning("ℹ️ Alte Miete bleibt als Belastung bestehen.")
-    aktuelle_warmmiete = st.sidebar.number_input("Aktuelle Warmmiete (Muss weiter gezahlt werden)", value=defaults["aktuelle_miete"], step=50, key="sb_akt_miete")
+    st.sidebar.warning("ℹ️ Alte Miete bleibt als Belastung.")
+    aktuelle_warmmiete = st.sidebar.number_input("Aktuelle Warmmiete (bleibt)", value=defaults["aktuelle_miete"], step=50, key="sb_akt_miete")
     neue_miete_einnahme = st.sidebar.number_input("Geplante Mieteinnahme (Kalt)", value=600, step=50, key="sb_neue_miete_ka")
-
 
 st.sidebar.markdown("---")
 st.sidebar.header("2. Haushalt & Familie")
@@ -160,7 +229,7 @@ makler_prozent = st.sidebar.number_input("Makler (%)", value=3.57, step=0.5, min
 konsum_kredite = st.sidebar.number_input("Konsumkredite (Auto etc.)", value=0, step=50, min_value=0, key="sb_konsum")
 
 # ==========================================
-# LOGIK & BERECHNUNG
+# BERECHNUNGS-LOGIK
 # ==========================================
 
 # 1. Pauschalen
@@ -169,29 +238,19 @@ kinder_pauschale_gesamt = anzahl_kinder * var_pauschale_kind
 kindergeld_betrag = anzahl_kinder * var_kindergeld
 puffer = 250 
 
-# 2. Nutzungsart-Logik (DAS IST DAS HERZSTÜCK)
+# 2. Nutzungsart
 belastung_durch_aktuelle_miete = 0.0
 einnahme_neues_objekt_kalkuliert = 0.0
 
-# Fallunterscheidung
 if nutzungsart == "Kapitalanlage (Reine Vermietung)":
-    # Miete bleibt als Belastung
     belastung_durch_aktuelle_miete = aktuelle_warmmiete
-    # Neue Miete kommt dazu
     einnahme_neues_objekt_kalkuliert = neue_miete_einnahme * (var_haircut_neu / 100)
-
 elif nutzungsart == "Eigenheim mit Vermietung (Einliegerw./MFH)":
-    # Alte Miete fällt weg (Belastung 0)
     belastung_durch_aktuelle_miete = 0.0
-    # Neue Miete kommt DAZU (Einliegerwohnung)
     einnahme_neues_objekt_kalkuliert = neue_miete_einnahme * (var_haircut_neu / 100)
-
-else: # "Eigenheim (Nur Selbstbezug)"
-    # Alte Miete fällt weg
+else: 
     belastung_durch_aktuelle_miete = 0.0
-    # Keine neue Miete
     einnahme_neues_objekt_kalkuliert = 0.0
-
 
 # 3. Summen
 total_einnahmen = (gehalt_haupt + gehalt_partner + nebeneinkommen + 
@@ -215,9 +274,10 @@ else:
 nebenkosten_faktor = (grunderwerbsteuer_prozent + var_notar + makler_prozent) / 100 
 gesamt_budget = max_darlehen + eigenkapital
 max_kaufpreis = gesamt_budget / (1 + nebenkosten_faktor)
+nk_wert = max_kaufpreis * nebenkosten_faktor
 
 # ==========================================
-# DOWNLOAD BUTTON
+# DOWNLOAD JSON
 # ==========================================
 export_data = {
     "sb_name": kunden_name,
@@ -246,7 +306,7 @@ safe_filename = f"{kunden_name.replace(' ', '_')}_Finanzcheck.json"
 
 with col_dl:
     st.download_button(
-        label=f"💾 '{safe_filename}' speichern",
+        label=f"💾 Daten sichern (JSON)",
         data=json_string,
         file_name=safe_filename,
         mime="application/json"
@@ -257,7 +317,6 @@ with col_dl:
 # ==========================================
 st.divider()
 st.markdown(f"### 🎯 Analyse für: {kunden_name}")
-st.caption(f"Szenario: {nutzungsart}")
 
 col1, col2 = st.columns([1, 1])
 
@@ -280,50 +339,62 @@ with col1:
         ("Lebenshaltung", gesamt_lebenshaltung),
         ("Rate Bestand", bestand_rate),
         ("Konsumkredite", konsum_kredite),
-        ("Aktuelle Miete (bleibt)", belastung_durch_aktuelle_miete),
+        ("Aktuelle Miete", belastung_durch_aktuelle_miete),
         ("Bewirtschaftung (Neu)", var_bewirtschaftung),
         ("Sicherheits-Puffer", puffer)
     ]
-    
     df_out = pd.DataFrame(ausgaben_liste, columns=["Posten", "Betrag"])
     df_out = df_out[df_out["Betrag"] > 0.01]
     st.dataframe(df_out, hide_index=True, use_container_width=True)
     st.error(f"Summe Ausgaben: **{total_ausgaben:,.2f} €**")
 
-    # Hinweise
-    if belastung_durch_aktuelle_miete > 0:
-        st.caption("ℹ️ Die aktuelle Miete bleibt als Belastung, da nicht selbst eingezogen wird.")
-    if einnahme_neues_objekt_kalkuliert > 0:
-        st.info(f"ℹ️ Die neue Mieteinnahme ({neue_miete_einnahme}€) wurde mit {var_haircut_neu}% Risikoabschlag eingerechnet.")
-
 with col2:
-    st.subheader("🏠 Ergebnis: Machbarkeit")
+    st.subheader("🏠 Ergebnis & Rate")
     
     if freier_betrag < 0:
-        st.warning(f"⚠️ **Budget nicht ausreichend!**\n\nFehlbetrag: {abs(freier_betrag):,.2f} €")
+        st.warning(f"⚠️ **Budget nicht ausreichend!** Fehlbetrag: {abs(freier_betrag):,.2f} €")
     else:
-        st.metric(label="Verfügbarer Betrag (Rate)", value=f"{freier_betrag:,.2f} €")
-        
-        # VERGLEICH RATE vs ALTE MIETE (Nur bei Eigenheim relevant)
-        if "Eigenheim" in nutzungsart and aktuelle_warmmiete > 0:
-            diff = freier_betrag - aktuelle_warmmiete
-            if diff > 0:
-                st.info(f"Rate ist **{diff:,.2f} € höher** als deine jetzige Warmmiete.")
-            else:
-                st.info(f"Rate ist **{abs(diff):,.2f} € niedriger** als deine jetzige Warmmiete.")
+        # HIER IST DIE RATE (ENTSBRICHT DEM BUDGET)
+        st.info(f"🏦 Monatliche Rate: **{freier_betrag:,.2f} €**")
+        st.caption(f"(Dies entspricht deinem monatlich verfügbaren Budget bei {zins_satz}% Zins & {tilgung_satz}% Tilgung)")
         
         st.markdown("### Maximaler Immobilienpreis")
         st.metric(label="Kaufpreis", value=f"{max_kaufpreis:,.0f} €")
-        nk_wert = max_kaufpreis * nebenkosten_faktor
+        
         st.write(f"+ Kaufnebenkosten: {nk_wert:,.0f} €")
         st.write(f"+ Eigenkapital: {eigenkapital:,.0f} €")
         st.markdown(f"**= Gesamtinvestition: {max_kaufpreis + nk_wert:,.0f} €**")
+        
         st.markdown("---")
-        st.write(f"🏦 Benötigtes Darlehen: **{max_darlehen:,.0f} €**")
+        st.write(f"Bankdarlehen: **{max_darlehen:,.0f} €**")
+        
+        # PDF GENERIERUNG
+        pdf_data = {
+            "name": kunden_name,
+            "scenario": nutzungsart,
+            "ein": total_einnahmen,
+            "aus": total_ausgaben,
+            "frei": freier_betrag,
+            "zins": zins_satz,
+            "tilg": tilgung_satz,
+            "kaufpreis": max_kaufpreis,
+            "nk": nk_wert,
+            "ek": eigenkapital,
+            "kredit": max_darlehen
+        }
+        
+        pdf_bytes = create_pdf(pdf_data)
+        
+        st.download_button(
+            label="📄 Als PDF-Zertifikat exportieren",
+            data=pdf_bytes,
+            file_name=f"{kunden_name.replace(' ', '_')}_Zertifikat.pdf",
+            mime="application/pdf",
+        )
 
 st.divider()
 fig = px.bar(
-    x=["Einnahmen", "Ausgaben", "Frei"],
+    x=["Einnahmen", "Ausgaben", "Rate (Budget)"],
     y=[total_einnahmen, total_ausgaben, max(freier_betrag, 0)],
     color=["1", "2", "3"], 
     color_discrete_sequence=["green", "red", "blue"],
