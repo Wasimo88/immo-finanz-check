@@ -40,14 +40,12 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 📄 PROFI PDF GENERATOR (NEU & BUNT)
+# 📄 PDF GENERATOR
 # ==========================================
 class PDF(FPDF):
     def header(self):
-        # Dunkelblauer Balken oben
-        self.set_fill_color(28, 58, 106) # Dunkelblau
+        self.set_fill_color(28, 58, 106)
         self.rect(0, 0, 210, 25, 'F')
-        # Titel weiß
         self.set_font('Arial', 'B', 16)
         self.set_text_color(255, 255, 255)
         self.cell(0, 15, 'Finanzierungs-Zertifikat', 0, 1, 'C')
@@ -63,26 +61,24 @@ def create_pdf(data):
     pdf = PDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-
-    # Farben definieren
-    col_header = (44, 62, 80)    # Dunkles Grau/Blau für Überschriften
-    col_text = (0, 0, 0)         # Schwarz
-    col_fill = (240, 240, 240)   # Hellgrau für Tabellen
+    
+    col_header = (44, 62, 80)
+    col_text = (0, 0, 0)
+    col_fill = (240, 240, 240)
 
     def txt(text):
         return text.encode('latin-1', 'replace').decode('latin-1')
 
-    # --- KUNDEN INFO ---
+    # INFO
     pdf.set_text_color(*col_header)
     pdf.set_font("Arial", "B", 14)
     pdf.cell(0, 10, txt(f"Analyse für: {data['name']}"), ln=True)
-    
     pdf.set_text_color(*col_text)
     pdf.set_font("Arial", "", 11)
     pdf.cell(0, 6, txt(f"Szenario: {data['scenario']}"), ln=True)
     pdf.ln(5)
 
-    # --- 1. HAUSHALTSRECHNUNG ---
+    # 1. HAUSHALT
     pdf.set_fill_color(*col_fill)
     pdf.set_font("Arial", "B", 12)
     pdf.set_text_color(*col_header)
@@ -92,31 +88,27 @@ def create_pdf(data):
     pdf.set_text_color(*col_text)
     pdf.set_font("Arial", "", 11)
     
-    # Tabelle Einnahmen/Ausgaben
-    # Zeile 1: Einnahmen
     pdf.cell(120, 8, txt("Gesamteinnahmen (Netto):"), border='B')
     pdf.set_font("Arial", "B", 11)
-    pdf.set_text_color(0, 100, 0) # Grün
+    pdf.set_text_color(0, 100, 0)
     pdf.cell(70, 8, txt(f"+ {eur(data['ein'])}"), border='B', ln=1, align='R')
     
-    # Zeile 2: Ausgaben
     pdf.set_text_color(*col_text)
     pdf.set_font("Arial", "", 11)
     pdf.cell(120, 8, txt("Gesamtausgaben (inkl. Puffer & Bestandsraten):"), border='B')
     pdf.set_font("Arial", "B", 11)
-    pdf.set_text_color(180, 0, 0) # Rot
+    pdf.set_text_color(180, 0, 0)
     pdf.cell(70, 8, txt(f"- {eur(data['aus'])}"), border='B', ln=1, align='R')
     
-    # Zeile 3: Ergebnis
     pdf.ln(2)
-    pdf.set_fill_color(230, 240, 255) # Helles Blau
+    pdf.set_fill_color(230, 240, 255)
     pdf.set_font("Arial", "B", 12)
     pdf.set_text_color(*col_header)
     pdf.cell(120, 10, txt("Verfügbarer Betrag (Freie Rate):"), 0, 0, 'L', True)
     pdf.cell(70, 10, txt(f"{eur(data['frei'])}"), 0, 1, 'R', True)
     pdf.ln(8)
 
-    # --- 2. MACHBARKEIT ---
+    # 2. MACHBARKEIT
     pdf.set_fill_color(*col_fill)
     pdf.set_font("Arial", "B", 12)
     pdf.set_text_color(*col_header)
@@ -128,8 +120,7 @@ def create_pdf(data):
     pdf.cell(0, 6, txt(f"Basis: {data['zins']}% Zins | {data['tilg']}% Tilgung"), ln=True)
     pdf.ln(2)
 
-    # Box für Kaufpreis
-    pdf.set_draw_color(28, 58, 106) # Dunkelblauer Rahmen
+    pdf.set_draw_color(28, 58, 106)
     pdf.set_line_width(0.5)
     pdf.set_font("Arial", "B", 12)
     
@@ -148,7 +139,7 @@ def create_pdf(data):
     pdf.cell(120, 10, txt("Notwendiges Bankdarlehen:"), 1, 0, 'L', True)
     pdf.cell(70, 10, txt(f"{eur(data['kredit'])}"), 1, 1, 'R', True)
 
-    # --- 3. WUNSCH OBJEKT (OPTIONAL) ---
+    # 3. WUNSCH OBJEKT
     if data['wunsch_preis'] > 0:
         pdf.ln(10)
         pdf.set_fill_color(*col_fill)
@@ -164,29 +155,27 @@ def create_pdf(data):
         
         pdf.ln(2)
         if data['wunsch_rate'] <= data['frei']:
-            pdf.set_fill_color(200, 255, 200) # Hellgrün
+            pdf.set_fill_color(200, 255, 200)
             pdf.set_text_color(0, 100, 0)
             status = "PASST INS BUDGET"
         else:
-            pdf.set_fill_color(255, 200, 200) # Hellrot
+            pdf.set_fill_color(255, 200, 200)
             pdf.set_text_color(180, 0, 0)
             status = "ÜBERSTEIGT BUDGET"
             
         pdf.set_font("Arial", "B", 12)
         pdf.cell(0, 10, txt(f"Ergebnis: {status}"), 1, 1, 'C', True)
 
-    # Disclaimer unten
     pdf.ln(15)
     pdf.set_text_color(100, 100, 100)
     pdf.set_font("Arial", "I", 8)
-    pdf.multi_cell(0, 5, txt("Hinweis: Dies ist eine unverbindliche Modellrechnung auf Basis Ihrer Angaben. Sie stellt keine Kreditzusage dar. Maßgeblich sind die Konditionen der Bank zum Zeitpunkt der Antragstellung."))
+    pdf.multi_cell(0, 5, txt("Hinweis: Dies ist eine unverbindliche Modellrechnung."))
 
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# 💾 SPEICHERN & LADEN (KORRIGIERT)
+# 💾 SPEICHERN & LADEN (FIXED)
 # ==========================================
-
 defaults = {
     "kinder": 1,
     "gehalt_h": 3000,
@@ -198,16 +187,14 @@ defaults = {
 
 def load_data(uploaded_file):
     if uploaded_file is not None:
-        # 1. Versuch: Daten lesen
         try:
             data = json.load(uploaded_file)
             for key, value in data.items():
                 st.session_state[key] = value
         except Exception as e:
-            st.error(f"Fehler beim Laden der Datei: {e}")
-            return  # Bei echtem Fehler hier abbrechen
+            st.error(f"Fehler: {e}")
+            return
 
-        # 2. Wenn alles geklappt hat -> Erfolgsmeldung & Neustart (AUSSERHALB von try/except!)
         st.success(f"✅ Daten erfolgreich geladen!")
         st.rerun()
 
@@ -227,7 +214,7 @@ with st.expander("📂 Daten Speichern / Laden", expanded=False):
         st.write("Sicherung:")
         st.info("Button ist unten in der Sidebar!")
 
-# --- SIDEBAR EINGABEN ---
+# --- SIDEBAR ---
 st.sidebar.header("1. Projekt-Daten")
 kunden_name = st.sidebar.text_input("Name des Kunden", value=defaults["kunde"], key="sb_name")
 
@@ -397,7 +384,6 @@ with col1:
     }
     df_in = pd.DataFrame(df_in_dict)
     df_in = df_in[df_in["Betrag"] > 0.01]
-    # Formatierung für Tabelle im Web
     st.dataframe(df_in, hide_index=True, use_container_width=True)
     st.success(f"Summe Einnahmen: **{eur(total_einnahmen)}**")
 
@@ -435,6 +421,14 @@ with col2:
             else:
                 col_b.error("❌ ZU TEUER")
                 st.caption(f"Fehlt: {eur(wunsch_rate - freier_betrag)}")
+            
+            # --- HIER IST DIE LISTE ZURÜCK! ---
+            with st.expander("Details zur Rechnung", expanded=True):
+                st.write(f"Kaufpreis: {eur(wunsch_kaufpreis)}")
+                st.write(f"• Nebenkosten: {eur(wunsch_nebenkosten)}")
+                st.write(f"• Eigenkapital: {eur(eigenkapital)}")
+                st.markdown(f"**= Darlehen: {eur(wunsch_darlehen)}**")
+            
             st.markdown("---")
 
         st.caption("Maximal machbarer Kaufpreis (Theoretisch):")
