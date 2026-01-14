@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 import json
 from fpdf import FPDF
 
@@ -31,7 +32,7 @@ def update_lebenshaltung():
     basis = 1000.0 if erw == "Alleinstehend" else 1700.0
     basis += (kind * 350.0)
 
-    # 2. Lifestyle-Zuschlag (Bank-Logik)
+    # 2. Lifestyle-Zuschlag
     zuschlag = 0.0
     if total_netto > 4000: zuschlag += 200 
     if total_netto > 6000: zuschlag += 300 
@@ -115,7 +116,7 @@ def create_pdf(data):
     pdf.cell(0, 8, txt("1. Monatliche Haushaltsrechnung"), 0, 1, 'L', True)
     pdf.ln(4)
 
-    # EINNAHMEN
+    # EINNAHMEN KOMPAKT
     pdf.set_font("Arial", "B", 10)
     pdf.set_text_color(0, 0, 0)
     pdf.cell(100, 6, txt("Gesamteinnahmen (Netto):"))
@@ -172,7 +173,7 @@ def create_pdf(data):
     pdf.set_text_color(180, 0, 0)
     pdf.cell(30, 6, txt(f"- {pdf_eur(data['aus_total'])}"), 0, 1, 'R')
 
-    # ERGEBNIS HAUSHALT
+    # ERGEBNIS
     pdf.ln(4)
     pdf.set_fill_color(230, 240, 255)
     pdf.set_font("Arial", "B", 12)
@@ -181,7 +182,7 @@ def create_pdf(data):
     pdf.cell(70, 10, txt(f"{pdf_eur(data['frei'])}"), 0, 1, 'R', True)
     pdf.ln(8)
 
-    # 2. VERGLEICH
+    # VERGLEICH
     if data['diff_miete'] is not None:
          pdf.set_fill_color(*col_fill)
          pdf.set_font("Arial", "B", 12)
@@ -207,7 +208,7 @@ def create_pdf(data):
              pdf.cell(0, 8, txt(f"-> Ersparnis: {pdf_eur(abs(diff))}"), 0, 1)
          pdf.ln(5)
 
-    # 3. WUNSCH OBJEKT & FINANZIERUNGSAUFBAU
+    # 3. WUNSCH OBJEKT
     if data['wunsch_preis'] > 0:
         pdf.set_fill_color(*col_fill)
         pdf.set_font("Arial", "B", 12)
@@ -218,7 +219,6 @@ def create_pdf(data):
         pdf.set_text_color(0,0,0)
         pdf.set_font("Arial", "", 10)
         
-        # Tabelle für Finanzbedarf
         pdf.cell(100, 6, txt("Kaufpreis:"))
         pdf.cell(30, 6, txt(pdf_eur(data['wunsch_preis'])), 0, 1, 'R')
         
@@ -244,7 +244,6 @@ def create_pdf(data):
         
         pdf.ln(4)
         
-        # Rate Check
         pdf.set_font("Arial", "", 11)
         pdf.cell(120, 8, txt(f"Notwendige Rate ({data['zins']}% Zins + {data['tilg']}% Tilgung):"), 0)
         pdf.cell(70, 8, txt(f"{pdf_eur(data['wunsch_rate'])}"), 0, 1, 'R')
@@ -263,9 +262,8 @@ def create_pdf(data):
             pdf.set_font("Arial", "B", 12)
             pdf.cell(0, 10, txt(f"Ergebnis: ÜBERSTEIGT BUDGET (Fehlt: {pdf_eur(diff_wunsch)}) ❌"), 1, 1, 'C', True)
 
-    # 4. MAXIMALER PREIS
+    # MAXIMALER PREIS
     else:
-        # Falls kein Wunschobjekt angegeben, zeige Max-Berechnung
         pdf.set_fill_color(*col_fill)
         pdf.set_font("Arial", "B", 12)
         pdf.set_text_color(*col_header)
@@ -376,9 +374,7 @@ sonstiges = st.sidebar.number_input("Sonstiges / Bonus", step=50, min_value=0, k
 st.sidebar.markdown("---")
 st.sidebar.header("3. Ausgaben (Bank-Logik)")
 
-# ZWISCHENBERECHNUNG
 aktuelles_gesamt_netto = gehalt_haupt + gehalt_partner + kindergeld + nebeneinkommen + sonstiges
-# Lokale Hilfsfunktion für Richtwert
 def get_bank_richtwert_local(netto, erw, kind):
     basis = 1000.0 if erw == "Alleinstehend" else 1700.0
     basis += (kind * 350.0)
@@ -427,18 +423,14 @@ if st.sidebar.checkbox("Immobilienbestand?", key="sb_hat_bestand"):
     rate_bestand = st.sidebar.number_input("Rate Bestand", value=0, min_value=0)
     miete_bestand_anrechenbar = miete_raw * 0.75 
 
-# --- SIDEBAR: 5. KAUFNEBENKOSTEN (NEU!) ---
+# --- SIDEBAR: 5. KAUFNEBENKOSTEN ---
 st.sidebar.header("5. Kaufnebenkosten (Variabel)")
-
 if "sb_grunderwerb" not in st.session_state: st.session_state.sb_grunderwerb = defaults["sb_grunderwerb"]
-grunderwerb = st.sidebar.number_input("Grunderwerbsteuer (%)", step=0.5, min_value=0.0, key="sb_grunderwerb", help="Je nach Bundesland (z.B. 3,5% - 6,5%).")
-
+grunderwerb = st.sidebar.number_input("Grunderwerbsteuer (%)", step=0.5, min_value=0.0, key="sb_grunderwerb")
 if "sb_notar" not in st.session_state: st.session_state.sb_notar = defaults["sb_notar"]
-notar = st.sidebar.number_input("Notar & Grundbuch (%)", step=0.1, min_value=0.0, key="sb_notar", help="Üblich sind ca. 2,0%.")
-
+notar = st.sidebar.number_input("Notar & Grundbuch (%)", step=0.1, min_value=0.0, key="sb_notar")
 if "sb_makler" not in st.session_state: st.session_state.sb_makler = defaults["sb_makler"]
-makler = st.sidebar.number_input("Maklerprovision (%)", step=0.1, min_value=0.0, key="sb_makler", help="Oft 3,57% (inkl. MwSt) oder 0% bei Privatkauf.")
-
+makler = st.sidebar.number_input("Maklerprovision (%)", step=0.1, min_value=0.0, key="sb_makler")
 nk_prozent_gesamt = grunderwerb + notar + makler
 st.sidebar.caption(f"Gesamt-Nebenkosten: **{nk_prozent_gesamt:.2f} %**")
 
@@ -446,9 +438,8 @@ st.sidebar.caption(f"Gesamt-Nebenkosten: **{nk_prozent_gesamt:.2f} %**")
 st.sidebar.header("6. Konkretes Objekt prüfen")
 if "sb_wunsch_preis" not in st.session_state: st.session_state.sb_wunsch_preis = 0
 wunsch_preis = st.sidebar.number_input("Kaufpreis Objekt", step=5000, min_value=0, key="sb_wunsch_preis")
-
-# NEU: RENOVIERUNG
-renovierung = st.sidebar.number_input("Renovierung / Modernisierung", value=0, step=1000, min_value=0, help="Zusätzlicher Kreditbedarf für Sanierung.")
+if "renovierung" not in st.session_state: st.session_state.renovierung = defaults["renovierung"]
+renovierung = st.sidebar.number_input("Renovierung / Modernisierung", step=1000, min_value=0, key="renovierung")
 
 # ==========================================
 # RECHNUNG & UI OUTPUT
@@ -463,11 +454,11 @@ ausgaben = var_lebenshaltung + var_bewirtschaftung + var_puffer + konsum + bausp
 frei = einnahmen - ausgaben
 annuitaet = zins + tilgung
 
-# Max Kaufpreis Berechnung
+# Max Kaufpreis
 max_kredit = (frei * 12 * 100) / annuitaet if (frei > 0 and annuitaet > 0) else 0
 max_preis = (max_kredit + eigenkapital) / (1 + (nk_prozent_gesamt/100))
 
-# Wunsch Objekt Berechnung
+# Wunsch Objekt
 wunsch_rate = 0.0
 wunsch_nk_euro = 0.0
 wunsch_invest = 0.0
@@ -481,20 +472,19 @@ if wunsch_preis > 0:
     if wunsch_darlehen > 0:
         wunsch_rate = (wunsch_darlehen * annuitaet) / 100 / 12
     else:
-        wunsch_rate = 0 # Kein Kredit nötig
+        wunsch_rate = 0
 
 diff_miete = None
 if aktuelle_warmmiete > 0 and nutzungsart != OPTIONS_NUTZUNG[2]:
     neue_wohnkosten = frei + var_bewirtschaftung + var_puffer
     diff_miete = neue_wohnkosten - aktuelle_warmmiete
 
-# UI
+# UI ANZEIGE
 col1, col2 = st.columns(2)
 with col1:
     st.markdown(f"### 🎯 Analyse für: {kunden_name}")
     st.subheader("💰 Haushaltsrechnung")
     
-    # DETAIL EINNAHMEN
     ein_liste = []
     if gehalt_haupt > 0: ein_liste.append(["Gehalt Haupt", gehalt_haupt])
     if gehalt_partner > 0: ein_liste.append(["Gehalt Partner", gehalt_partner])
@@ -549,7 +539,7 @@ with col2:
                 st.write(f"- Eigenkapital: {eur(eigenkapital)}")
                 st.write(f"**= Darlehen: {eur(wunsch_darlehen)}**")
 
-    # DATEINAMEN MIT KUNDENNAME
+    # PDF & SAVE BUTTONS
     safe_name = kunden_name.replace(" ", "_")
     
     pdf_data = {
@@ -570,7 +560,20 @@ with col2:
     pdf_bytes = create_pdf(pdf_data)
     st.download_button("📄 PDF Zertifikat", data=pdf_bytes, file_name=f"{safe_name}_Finanzcheck.pdf", mime="application/pdf")
 
-# JSON SAVE
-save_data = st.session_state.to_dict()
-json_str = json.dumps({k: v for k,v in save_data.items() if k.startswith(("sb_", "exp_"))})
-st.download_button("💾 Daten sichern (JSON)", json_str, f"{safe_name}_Daten.json", "application/json")
+    save_data = st.session_state.to_dict()
+    json_str = json.dumps({k: v for k,v in save_data.items() if k.startswith(("sb_", "exp_", "renovierung"))})
+    st.download_button("💾 Daten sichern (JSON)", json_str, f"{safe_name}_Daten.json", "application/json")
+
+# HIER IST DIE WIEDERHERGESTELLTE GRAFIK:
+st.divider()
+fig = px.bar(
+    x=["Einnahmen", "Ausgaben", "Budget"],
+    y=[einnahmen, ausgaben, max(frei, 0)],
+    color=["1", "2", "3"], 
+    color_discrete_sequence=["green", "red", "blue"],
+    title=f"Liquiditäts-Check: {kunden_name}"
+)
+if wunsch_preis > 0:
+    fig.add_hline(y=wunsch_rate, line_dash="dot", annotation_text="Nötige Rate (Wunsch)", line_color="orange")
+fig.update_layout(showlegend=False)
+st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
