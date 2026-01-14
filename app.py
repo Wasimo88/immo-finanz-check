@@ -8,23 +8,66 @@ from fpdf import FPDF
 st.set_page_config(page_title="Immo-Finanz Master Pro", layout="wide")
 
 # ==========================================
-# 🛠 HELFER & CALLBACKS
+# 🧠 INTELLIGENTE BANK-LOGIK (NEU)
+# ==========================================
+
+def get_bank_richtwert(netto, erwachsene_str, kinder):
+    """
+    Berechnet die Pauschale basierend auf Einkommen (Lifestyle) & Köpfen.
+    Orientiert an Bank-Standards (z.B. Frankfurter Volksbank Modell).
+    """
+    # 1. Basis-Sockelbetrag nach Personen
+    if erwachsene_str == "Alleinstehend":
+        basis = 1000.0
+    else: # Paar
+        basis = 1700.0
+    
+    # Kinder-Zuschlag (ca. 300-400€ pro Kind)
+    basis += (kinder * 350.0)
+
+    # 2. Lifestyle-Zuschlag basierend auf Netto-Einkommen
+    # Wer viel verdient, hat meist höhere Ausgaben (Auto, Urlaub, Hobbys)
+    zuschlag = 0.0
+    if netto > 4000:
+        zuschlag += 300 # Erster Sprung
+    if netto > 6000:
+        zuschlag += 300 # Zweiter Sprung (insg. 600)
+    if netto > 8000:
+        zuschlag += 400 # Dritter Sprung (insg. 1000)
+        
+    return basis + zuschlag
+
+# CALLBACKS (Aktualisieren die Werte automatisch)
+def update_lebenshaltung():
+    # Wir holen uns die aktuellen Einkommensdaten für die Berechnung
+    h = st.session_state.get("sb_gehalt_h", 3000)
+    p = st.session_state.get("sb_gehalt_p", 0)
+    k = st.session_state.get("sb_kinder", 0) * 250 # Kindergeld schätzen
+    n = st.session_state.get("sb_neben", 0)
+    s = st.session_state.get("sb_sonst", 0)
+    
+    total_netto = h + p + k + n + s
+    
+    erw = st.session_state.sb_erwachsene
+    kind = st.session_state.sb_kinder
+    
+    # Berechnen und setzen
+    neuer_wert = get_bank_richtwert(total_netto, erw, kind)
+    st.session_state.exp_p_lebenshaltung = float(neuer_wert)
+
+def update_bewirtschaftung():
+    qm = st.session_state.sb_wohnflaeche
+    # Faustformel: 4,00 € pro qm
+    st.session_state.exp_bewirt = float(qm * 4.0)
+
+# ==========================================
+# 🛠 HELFER
 # ==========================================
 def eur(wert):
     return f"{wert:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
 
 def pdf_eur(wert):
     return f"{wert:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " EUR"
-
-def update_lebenshaltung():
-    erw = st.session_state.sb_erwachsene
-    kind = st.session_state.sb_kinder
-    basis = 1200 if erw == "Alleinstehend" else 1600
-    st.session_state.exp_p_lebenshaltung = float(basis + (kind * 400))
-
-def update_bewirtschaftung():
-    qm = st.session_state.sb_wohnflaeche
-    st.session_state.exp_bewirt = float(qm * 4.0)
 
 # ==========================================
 # 🔒 PASSWORD
@@ -51,7 +94,7 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 📄 PDF GENERATOR (KOMPAKT & PROFI)
+# 📄 PDF GENERATOR
 # ==========================================
 class PDF(FPDF):
     def header(self):
@@ -98,32 +141,6 @@ def create_pdf(data):
     pdf.cell(0, 8, txt("1. Monatliche Haushaltsrechnung"), 0, 1, 'L', True)
     pdf.ln(2)
 
-    # --- EINNAHMEN (KOMPAKT) ---
-    pdf.set_font("Arial", "B", 10)
-    pdf.set_text_color(0, 0, 0)
-    pdf.cell(100, 6, txt("Gesamteinnahmen (Netto):"))
-    pdf.set_text_color(0, 100, 0) # Grün
-    pdf.cell(30, 6, txt(f"+ {pdf_eur(data['ein_total'])}"), 0, 1, 'R')
-    
-    # Details in Klammern darunter bauen
-    details_list = []
-    if data['ein_haupt'] > 0: details_list.append(f"Gehalt Haupt: {pdf_eur(data['ein_haupt'])}")
-    if data['ein_partner'] > 0: details_list.append(f"Gehalt Partner: {pdf_eur(data['ein_partner'])}")
-    if data['ein_kinder'] > 0: details_list.append(f"Kindergeld: {pdf_eur(data['ein_kinder'])}")
-    if data['ein_neben'] > 0: details_list.append(f"Nebeneinkunft: {pdf_eur(data['ein_neben'])}")
-    if data['ein_sonst'] > 0: details_list.append(f"Sonstiges: {pdf_eur(data['ein_sonst'])}")
-    if data['ein_miete_bestand'] > 0: details_list.append(f"Miete Bestand: {pdf_eur(data['ein_miete_bestand'])}")
-    if data['ein_miete_neu'] > 0: details_list.append(f"Miete Neu (Kalk.): {pdf_eur(data['ein_miete_neu'])}")
-    
-    details_str = ", ".join(details_list)
-    
-    pdf.set_font("Arial", "I", 8)
-    pdf.set_text_color(100, 100, 100)
-    pdf.multi_cell(0, 5, txt(f"(Zusammensetzung: {details_str})"))
-    pdf.ln(2)
-
-    # --- AUSGABEN (DETAILLIERT) ---
-    # Hilfsfunktion für Zeilen
     def row(label, val, note=""):
         pdf.set_font("Arial", "", 10)
         pdf.set_text_color(0, 0, 0)
@@ -135,6 +152,38 @@ def create_pdf(data):
             pdf.cell(60, 6, txt(f"  ({note})"), 0, 0, 'L')
         pdf.ln()
 
+    # EINNAHMEN DETAIL
+    pdf.set_text_color(*col_text)
+    pdf.set_font("Arial", "B", 10)
+    pdf.cell(0, 6, txt("Einnahmen (Detailliert):"), 0, 1)
+
+    details_list = []
+    if data['ein_haupt'] > 0: details_list.append(f"Gehalt Haupt: {pdf_eur(data['ein_haupt'])}")
+    if data['ein_partner'] > 0: details_list.append(f"Gehalt Partner: {pdf_eur(data['ein_partner'])}")
+    if data['ein_kinder'] > 0: details_list.append(f"Kindergeld: {pdf_eur(data['ein_kinder'])}")
+    if data['ein_neben'] > 0: details_list.append(f"Nebeneinkunft: {pdf_eur(data['ein_neben'])}")
+    if data['ein_sonst'] > 0: details_list.append(f"Sonstiges: {pdf_eur(data['ein_sonst'])}")
+    if data['ein_miete_bestand'] > 0: details_list.append(f"Miete Bestand: {pdf_eur(data['ein_miete_bestand'])}")
+    if data['ein_miete_neu'] > 0: details_list.append(f"Miete Neu (Kalk.): {pdf_eur(data['ein_miete_neu'])}")
+    
+    details_str = ", ".join(details_list)
+
+    # Summe Einnahmen
+    pdf.set_font("Arial", "B", 10)
+    pdf.cell(100, 6, txt("Gesamteinnahmen (Netto):"))
+    pdf.set_text_color(0, 100, 0)
+    pdf.cell(30, 6, txt(f"+ {pdf_eur(data['ein_total'])}"), 0, 1, 'R')
+    
+    pdf.set_font("Arial", "I", 8)
+    pdf.set_text_color(100, 100, 100)
+    pdf.multi_cell(0, 5, txt(f"(Zusammensetzung: {details_str})"))
+    pdf.ln(2)
+
+    # AUSGABEN DETAIL
+    pdf.set_text_color(*col_text)
+    pdf.set_font("Arial", "B", 10)
+    pdf.cell(0, 6, txt("Ausgaben (Detailliert):"), 0, 1)
+    
     # Linie oben
     pdf.cell(100, 0, "", "T")
     pdf.cell(30, 0, "", "T")
@@ -153,7 +202,7 @@ def create_pdf(data):
     pdf.set_font("Arial", "B", 10)
     pdf.set_text_color(0, 0, 0)
     pdf.cell(100, 6, txt("Summe Ausgaben:"))
-    pdf.set_text_color(180, 0, 0) # Rot
+    pdf.set_text_color(180, 0, 0)
     pdf.cell(30, 6, txt(f"- {pdf_eur(data['aus_total'])}"), 0, 1, 'R')
 
     # ERGEBNIS
@@ -177,8 +226,6 @@ def create_pdf(data):
          pdf.set_font("Arial", "", 10)
          pdf.cell(100, 6, txt("Bisherige Warmmiete:"))
          pdf.cell(30, 6, txt(pdf_eur(data['alt_warm'])), 0, 1, 'R')
-         
-         # HIER IST DIE ÄNDERUNG: EXPLIZITER TEXT
          pdf.cell(100, 6, txt("Neue Belastung (Rate + NK + Puffer):"))
          pdf.cell(30, 6, txt(pdf_eur(data['neu_last'])), 0, 1, 'R')
          
@@ -285,7 +332,7 @@ with st.expander("📂 Speichern / Laden", expanded=False):
     with col_dl:
         st.info("Download unten!")
 
-# --- SIDEBAR ---
+# --- SIDEBAR: PROJEKT ---
 st.sidebar.header("1. Projekt & Nutzung")
 if "sb_name" not in st.session_state: st.session_state.sb_name = defaults["kunde"]
 kunden_name = st.sidebar.text_input("Name", key="sb_name")
@@ -301,14 +348,11 @@ wohnflaeche = st.sidebar.number_input(
     help="Berechnungsgrundlage für Nebenkosten."
 )
 
-aktuelle_warmmiete = 0.0
-neue_miete_einnahme = 0.0
-
 if "sb_akt_miete" not in st.session_state: st.session_state.sb_akt_miete = defaults["aktuelle_miete"]
-
 if nutzungsart == OPTIONS_NUTZUNG[0]:
     st.sidebar.info("Alte Miete entfällt.")
     aktuelle_warmmiete = st.sidebar.number_input("Aktuelle Warmmiete", step=50, min_value=0, key="sb_akt_miete")
+    neue_miete_einnahme = 0.0
 elif nutzungsart == OPTIONS_NUTZUNG[1]:
     st.sidebar.success("Zusatz-Einnahmen!")
     aktuelle_warmmiete = st.sidebar.number_input("Aktuelle Warmmiete", step=50, min_value=0, key="sb_akt_miete")
@@ -320,22 +364,45 @@ else:
     if "sb_neue_miete_ka" not in st.session_state: st.session_state.sb_neue_miete_ka = 600
     neue_miete_einnahme = st.sidebar.number_input("Mieteinnahme Neu (Kalt)", step=50, min_value=0, key="sb_neue_miete_ka")
 
-st.sidebar.header("2. Haushalt")
+# --- SIDEBAR: EINKOMMEN (JETZT OBEN FÜR BERECHNUNG) ---
+st.sidebar.header("2. Einkommen (Netto)")
+if "sb_gehalt_h" not in st.session_state: st.session_state.sb_gehalt_h = defaults["gehalt_h"]
+gehalt_haupt = st.sidebar.number_input("Gehalt Haupt", step=50, min_value=0, key="sb_gehalt_h")
+
 if "sb_erwachsene" not in st.session_state: st.session_state.sb_erwachsene = "Paar (2 Personen)"
 anzahl_erwachsene = st.sidebar.radio("Personen", ["Alleinstehend", "Paar (2 Personen)"], key="sb_erwachsene", on_change=update_lebenshaltung)
 
+gehalt_partner = 0
+if anzahl_erwachsene == "Paar (2 Personen)":
+    if "sb_gehalt_p" not in st.session_state: st.session_state.sb_gehalt_p = defaults["gehalt_p"]
+    gehalt_partner = st.sidebar.number_input("Gehalt Partner", step=50, min_value=0, key="sb_gehalt_p")
+
 if "sb_kinder" not in st.session_state: st.session_state.sb_kinder = defaults["kinder"]
 anzahl_kinder = st.sidebar.number_input("Kinder", step=1, min_value=0, key="sb_kinder", on_change=update_lebenshaltung)
+kindergeld = anzahl_kinder * 250
 
+if "sb_neben" not in st.session_state: st.session_state.sb_neben = 0
+nebeneinkommen = st.sidebar.number_input("Minijob / Nebentätigkeit", step=50, min_value=0, key="sb_neben")
+if "sb_sonst" not in st.session_state: st.session_state.sb_sonst = 0
+sonstiges = st.sidebar.number_input("Sonstiges / Bonus", step=50, min_value=0, key="sb_sonst")
+
+# --- SIDEBAR: AUSGABEN ---
 st.sidebar.markdown("---")
-st.sidebar.subheader("Ausgaben (Bank-Logik)")
+st.sidebar.header("3. Ausgaben (Bank-Logik)")
+
+# ZWISCHENBERECHNUNG GESAMTEINKOMMEN FÜR BANK-LOGIK
+aktuelles_gesamt_netto = gehalt_haupt + gehalt_partner + kindergeld + nebeneinkommen + sonstiges
+bank_richtwert = get_bank_richtwert(aktuelles_gesamt_netto, anzahl_erwachsene, anzahl_kinder)
+
+# Initialisierung
 if "exp_p_lebenshaltung" not in st.session_state: update_lebenshaltung()
 if "exp_bewirt" not in st.session_state: update_bewirtschaftung()
 
 var_lebenshaltung = st.sidebar.number_input(
     "Lebenshaltung (Pauschale)", key="exp_p_lebenshaltung", step=50.0, min_value=0.0,
-    help="Enthält: Essen, Kleidung, Gesundheit (auch Zuzahlungen Diabetes), Mobilität. Quelle: Destatis."
+    help="Enthält: Essen, Kleidung, Gesundheit, Mobilität. Basierend auf Personenzahl & Einkommensklasse."
 )
+st.sidebar.info(f"💡 Bank-Richtwert bei deinem Einkommen: {eur(bank_richtwert)}")
 st.sidebar.markdown("[📊 Quelle Destatis](https://www.destatis.de/DE/Themen/Gesellschaft-Umwelt/Einkommen-Konsum-Lebensbedingungen/Konsumausgaben-Lebenshaltungskosten/_inhalt.html)")
 
 var_bewirtschaftung = st.sidebar.number_input(
@@ -346,25 +413,12 @@ st.sidebar.markdown("[📊 Quelle Mieterbund](https://www.mieterbund.de/service/
 
 var_puffer = st.sidebar.number_input("Instandhaltungs-Puffer", value=250, step=50, min_value=0, help="Rücklagen.")
 
-st.sidebar.header("3. Einnahmen & Kredite")
-if "sb_gehalt_h" not in st.session_state: st.session_state.sb_gehalt_h = defaults["gehalt_h"]
-gehalt_haupt = st.sidebar.number_input("Gehalt Haupt", step=50, min_value=0, key="sb_gehalt_h")
-
-gehalt_partner = 0
-if anzahl_erwachsene == "Paar (2 Personen)":
-    if "sb_gehalt_p" not in st.session_state: st.session_state.sb_gehalt_p = defaults["gehalt_p"]
-    gehalt_partner = st.sidebar.number_input("Gehalt Partner", step=50, min_value=0, key="sb_gehalt_p")
-
-kindergeld = anzahl_kinder * 250
-if "sb_neben" not in st.session_state: st.session_state.sb_neben = 0
-nebeneinkommen = st.sidebar.number_input("Minijob / Nebentätigkeit", step=50, min_value=0, key="sb_neben")
-if "sb_sonst" not in st.session_state: st.session_state.sb_sonst = 0
-sonstiges = st.sidebar.number_input("Sonstiges / Bonus", step=50, min_value=0, key="sb_sonst")
 if "sb_konsum" not in st.session_state: st.session_state.sb_konsum = 0
 konsum = st.sidebar.number_input("Konsumkredite (Rate)", step=50, min_value=0, key="sb_konsum")
 if "sb_bauspar" not in st.session_state: st.session_state.sb_bauspar = 0
 bauspar = st.sidebar.number_input("Sparraten Pflicht", step=50, min_value=0, key="sb_bauspar")
 
+# --- SIDEBAR: MARKT & BESTAND ---
 st.sidebar.header("4. Markt & Bestand")
 if "sb_ek" not in st.session_state: st.session_state.sb_ek = defaults["ek"]
 eigenkapital = st.sidebar.number_input("Eigenkapital", step=1000, min_value=0, key="sb_ek")
