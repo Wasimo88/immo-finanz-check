@@ -8,10 +8,15 @@ from fpdf import FPDF
 st.set_page_config(page_title="Immo-Finanz Master", layout="wide")
 
 # ==========================================
-# 🛠 HELFER: DEUTSCHE ZAHLENFORMATIERUNG
+# 🛠 HELFER: ZAHLEN & TEXTE
 # ==========================================
 def eur(wert):
+    """Für die Web-Anzeige (mit € Zeichen)"""
     return f"{wert:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
+
+def pdf_eur(wert):
+    """Für das PDF (mit 'EUR' Text, damit keine ? erscheinen)"""
+    return f"{wert:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " EUR"
 
 # ==========================================
 # 🔒 SICHERHEITS-CHECK
@@ -39,7 +44,7 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 📄 PDF GENERATOR
+# 📄 PDF GENERATOR (UPDATED)
 # ==========================================
 class PDF(FPDF):
     def header(self):
@@ -55,6 +60,9 @@ class PDF(FPDF):
         self.set_font('Arial', 'I', 8)
         self.set_text_color(128, 128, 128)
         self.cell(0, 10, f'Seite {self.page_no()}', 0, 0, 'C')
+        # HIER IST DEIN NEUER FOOTER:
+        self.set_x(-40)
+        self.cell(30, 10, 'WA | 2026', 0, 0, 'R')
 
 def create_pdf(data):
     pdf = PDF()
@@ -90,21 +98,22 @@ def create_pdf(data):
     pdf.cell(120, 8, txt("Gesamteinnahmen (Netto):"), border='B')
     pdf.set_font("Arial", "B", 11)
     pdf.set_text_color(0, 100, 0)
-    pdf.cell(70, 8, txt(f"+ {eur(data['ein'])}"), border='B', ln=1, align='R')
+    # WICHTIG: Hier nutzen wir jetzt pdf_eur() statt eur()
+    pdf.cell(70, 8, txt(f"+ {pdf_eur(data['ein'])}"), border='B', ln=1, align='R')
     
     pdf.set_text_color(*col_text)
     pdf.set_font("Arial", "", 11)
     pdf.cell(120, 8, txt("Gesamtausgaben (inkl. Puffer & Bestandsraten):"), border='B')
     pdf.set_font("Arial", "B", 11)
     pdf.set_text_color(180, 0, 0)
-    pdf.cell(70, 8, txt(f"- {eur(data['aus'])}"), border='B', ln=1, align='R')
+    pdf.cell(70, 8, txt(f"- {pdf_eur(data['aus'])}"), border='B', ln=1, align='R')
     
     pdf.ln(2)
     pdf.set_fill_color(230, 240, 255)
     pdf.set_font("Arial", "B", 12)
     pdf.set_text_color(*col_header)
     pdf.cell(120, 10, txt("Verfügbarer Betrag (Freie Rate):"), 0, 0, 'L', True)
-    pdf.cell(70, 10, txt(f"{eur(data['frei'])}"), 0, 1, 'R', True)
+    pdf.cell(70, 10, txt(f"{pdf_eur(data['frei'])}"), 0, 1, 'R', True)
     pdf.ln(8)
 
     # 2. MACHBARKEIT
@@ -124,19 +133,19 @@ def create_pdf(data):
     pdf.set_font("Arial", "B", 12)
     
     pdf.cell(120, 10, txt("Max. Kaufpreis der Immobilie:"), 1)
-    pdf.cell(70, 10, txt(f"{eur(data['kaufpreis'])}"), 1, 1, 'R')
+    pdf.cell(70, 10, txt(f"{pdf_eur(data['kaufpreis'])}"), 1, 1, 'R')
     
     pdf.set_font("Arial", "", 11)
     pdf.cell(120, 8, txt("dazu Kaufnebenkosten (Notar, Steuer, Makler):"), 1)
-    pdf.cell(70, 8, txt(f"+ {eur(data['nk'])}"), 1, 1, 'R')
+    pdf.cell(70, 8, txt(f"+ {pdf_eur(data['nk'])}"), 1, 1, 'R')
     
     pdf.cell(120, 8, txt("abzüglich Eigenkapital:"), 1)
-    pdf.cell(70, 8, txt(f"- {eur(data['ek'])}"), 1, 1, 'R')
+    pdf.cell(70, 8, txt(f"- {pdf_eur(data['ek'])}"), 1, 1, 'R')
     
     pdf.set_fill_color(220, 220, 220)
     pdf.set_font("Arial", "B", 11)
     pdf.cell(120, 10, txt("Notwendiges Bankdarlehen:"), 1, 0, 'L', True)
-    pdf.cell(70, 10, txt(f"{eur(data['kredit'])}"), 1, 1, 'R', True)
+    pdf.cell(70, 10, txt(f"{pdf_eur(data['kredit'])}"), 1, 1, 'R', True)
 
     # 3. WUNSCH OBJEKT
     if data['wunsch_preis'] > 0:
@@ -144,27 +153,31 @@ def create_pdf(data):
         pdf.set_fill_color(*col_fill)
         pdf.set_font("Arial", "B", 12)
         pdf.set_text_color(*col_header)
-        pdf.cell(0, 8, txt(f"3. Prüfung Wunsch-Objekt ({eur(data['wunsch_preis'])})"), 0, 1, 'L', True)
+        pdf.cell(0, 8, txt(f"3. Prüfung Wunsch-Objekt ({pdf_eur(data['wunsch_preis'])})"), 0, 1, 'L', True)
         pdf.ln(2)
         
         pdf.set_text_color(*col_text)
         pdf.set_font("Arial", "", 11)
         pdf.cell(120, 8, txt("Erforderliche Rate für dieses Objekt:"), 0)
-        pdf.cell(70, 8, txt(f"{eur(data['wunsch_rate'])}"), 0, 1, 'R')
+        pdf.cell(70, 8, txt(f"{pdf_eur(data['wunsch_rate'])}"), 0, 1, 'R')
         
         pdf.ln(2)
+        diff = data['wunsch_rate'] - data['frei']
+        
         if data['wunsch_rate'] <= data['frei']:
             pdf.set_fill_color(200, 255, 200)
             pdf.set_text_color(0, 100, 0)
             status = "PASST INS BUDGET"
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 10, txt(f"Ergebnis: {status}"), 1, 1, 'C', True)
         else:
             pdf.set_fill_color(255, 200, 200)
             pdf.set_text_color(180, 0, 0)
             status = "ÜBERSTEIGT BUDGET"
+            pdf.set_font("Arial", "B", 12)
+            # HIER WIRD JETZT AUCH DER FEHLBETRAG IM PDF ANGEZEIGT
+            pdf.cell(0, 10, txt(f"Ergebnis: {status} (Fehlt: {pdf_eur(diff)})"), 1, 1, 'C', True)
             
-        pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 10, txt(f"Ergebnis: {status}"), 1, 1, 'C', True)
-
     pdf.ln(15)
     pdf.set_text_color(100, 100, 100)
     pdf.set_font("Arial", "I", 8)
@@ -173,7 +186,7 @@ def create_pdf(data):
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# 💾 SPEICHERN & LADEN (FIXED MIT CALLBACK)
+# 💾 SPEICHERN & LADEN
 # ==========================================
 defaults = {
     "kinder": 1,
@@ -184,16 +197,13 @@ defaults = {
     "aktuelle_miete": 1000
 }
 
-# Diese Funktion wird NUR aufgerufen, wenn sich am Datei-Upload was ändert
 def load_data_callback():
-    # Wir holen uns die Datei direkt über den Schlüssel 'json_loader'
     uploaded = st.session_state.get('json_loader')
     if uploaded is not None:
         try:
             data = json.load(uploaded)
             for key, value in data.items():
                 st.session_state[key] = value
-            # Ein kleiner Toast-Hinweis (unten rechts), dass es geklappt hat
             st.toast("✅ Daten erfolgreich geladen!", icon="🎉")
         except Exception as e:
             st.error(f"Fehler beim Lesen der Datei: {e}")
@@ -207,17 +217,10 @@ st.title("🏡 Profi-Finanzierungscheck")
 with st.expander("📂 Daten Speichern / Laden", expanded=False):
     col_dl, col_ul = st.columns(2)
     with col_ul:
-        # HIER IST DER FIX: on_change=load_data_callback
-        st.file_uploader(
-            "JSON laden", 
-            type=["json"], 
-            key="json_loader", 
-            on_change=load_data_callback
-        )
-        
+        st.file_uploader("JSON laden", type=["json"], key="json_loader", on_change=load_data_callback)
     with col_dl:
         st.write("Sicherung:")
-        st.info("Speichern-Button ist unten in der Sidebar!")
+        st.info("Button ist unten in der Sidebar!")
 
 # --- SIDEBAR ---
 st.sidebar.header("1. Projekt-Daten")
@@ -226,7 +229,8 @@ kunden_name = st.sidebar.text_input("Name des Kunden", value=defaults["kunde"], 
 nutzungsart = st.sidebar.radio(
     "Verwendungszweck", 
     ["Eigenheim (Nur Selbstbezug)", "Eigenheim mit Vermietung (Einliegerw./MFH)", "Kapitalanlage (Reine Vermietung)"], 
-    key="sb_nutzung"
+    key="sb_nutzung",
+    help="Wähle hier, ob du selbst einziehst oder vermietest. Das ändert die Berechnung der Mieteinnahmen und Ausgaben."
 )
 
 aktuelle_warmmiete = 0.0
@@ -238,11 +242,20 @@ if nutzungsart == "Eigenheim (Nur Selbstbezug)":
 elif nutzungsart == "Eigenheim mit Vermietung (Einliegerw./MFH)":
     st.sidebar.success("ℹ️ ZUSÄTZLICHE Einnahmen durch Vermietung!")
     aktuelle_warmmiete = st.sidebar.number_input("Vergleich: Aktuelle Warmmiete", value=defaults["aktuelle_miete"], step=50, key="sb_akt_miete")
-    neue_miete_einnahme = st.sidebar.number_input("Geplante Mieteinnahme (Kalt)", value=500, step=50, key="sb_neue_miete_mix")
+    neue_miete_einnahme = st.sidebar.number_input(
+        "Geplante Mieteinnahme (Kalt)", value=500, step=50, key="sb_neue_miete_mix",
+        help="Mieteinnahmen der Einliegerwohnung oder der anderen Einheiten im Haus."
+    )
 elif nutzungsart == "Kapitalanlage (Reine Vermietung)":
     st.sidebar.warning("ℹ️ Alte Miete bleibt als Belastung.")
-    aktuelle_warmmiete = st.sidebar.number_input("Aktuelle Warmmiete (bleibt)", value=defaults["aktuelle_miete"], step=50, key="sb_akt_miete")
-    neue_miete_einnahme = st.sidebar.number_input("Geplante Mieteinnahme (Kalt)", value=600, step=50, key="sb_neue_miete_ka")
+    aktuelle_warmmiete = st.sidebar.number_input(
+        "Aktuelle Warmmiete (bleibt)", value=defaults["aktuelle_miete"], step=50, key="sb_akt_miete",
+        help="Deine private Miete, die du weiterzahlen musst."
+    )
+    neue_miete_einnahme = st.sidebar.number_input(
+        "Geplante Mieteinnahme (Kalt)", value=600, step=50, key="sb_neue_miete_ka",
+        help="Geschätzte Kaltmiete, die das neue Objekt einbringt."
+    )
 
 st.sidebar.markdown("---")
 st.sidebar.header("2. Haushalt & Familie")
@@ -250,19 +263,26 @@ anzahl_erwachsene = st.sidebar.radio("Antragsteller", ["Alleinstehend", "Paar (2
 anzahl_kinder = st.sidebar.number_input("Anzahl Kinder", value=defaults["kinder"], step=1, min_value=0, key="sb_kinder")
 
 with st.sidebar.expander("⚙️ Experten-Werte", expanded=False):
+    st.write("Hier kannst du die Bank-Pauschalen anpassen:")
     var_kindergeld = st.number_input("Kindergeld (€)", value=250, step=10, min_value=0, key="exp_kindergeld")
-    var_pauschale_single = st.number_input("LH Single (€)", value=1200, step=50, min_value=0, key="exp_p_single")
-    var_pauschale_paar = st.number_input("LH Paar (€)", value=1600, step=50, min_value=0, key="exp_p_paar")
+    var_pauschale_single = st.number_input("LH Single (€)", value=1200, step=50, min_value=0, key="exp_p_single", help="Mindest-Lebenshaltungskosten für 1 Person")
+    var_pauschale_paar = st.number_input("LH Paar (€)", value=1600, step=50, min_value=0, key="exp_p_paar", help="Mindest-Lebenshaltungskosten für 2 Personen")
     var_pauschale_kind = st.number_input("LH Kind (€)", value=400, step=25, min_value=0, key="exp_p_kind")
-    var_bewirtschaftung = st.number_input("Bewirtschaftung Neu (€)", value=450, step=50, min_value=0, key="exp_bewirt")
-    var_haircut_neu = st.number_input("Risikoabschlag Miete Neu (%)", value=80, step=5, max_value=100, key="exp_haircut_neu")
+    var_bewirtschaftung = st.number_input("Bewirtschaftung Neu (€)", value=450, step=50, min_value=0, key="exp_bewirt", help="Nebenkosten, die nicht auf Mieter umgelegt werden können (Instandhaltung, Hausgeld, Verwaltung).")
+    var_haircut_neu = st.number_input("Risikoabschlag Miete Neu (%)", value=80, step=5, max_value=100, key="exp_haircut_neu", help="Banken rechnen meist nur 75-80% der neuen Miete an.")
     var_notar = st.number_input("Notar (%)", value=2.0, step=0.1, min_value=0.0, format="%.2f", key="exp_notar")
 
 st.sidebar.header("3. Einnahmen (Netto)")
-gehalt_haupt = st.sidebar.number_input("Gehalt Hauptverdiener", value=defaults["gehalt_h"], step=50, min_value=0, key="sb_gehalt_h")
+gehalt_haupt = st.sidebar.number_input(
+    "Gehalt Hauptverdiener", value=defaults["gehalt_h"], step=50, min_value=0, key="sb_gehalt_h",
+    help="Netto-Auszahlungsbetrag laut Lohnabrechnung."
+)
 gehalt_partner = st.sidebar.number_input("Gehalt Partner/in", value=defaults["gehalt_p"], step=50, min_value=0, key="sb_gehalt_p") if anzahl_erwachsene == "Paar (2 Personen)" else 0
-nebeneinkommen = st.sidebar.number_input("Minijob / Nebentätigkeit", value=0, step=50, min_value=0, key="sb_neben")
-sonstiges_einkommen = st.sidebar.number_input("Sonstiges", value=0, step=50, min_value=0, key="sb_sonst")
+nebeneinkommen = st.sidebar.number_input(
+    "Minijob / Nebentätigkeit", value=0, step=50, min_value=0, key="sb_neben",
+    help="Nur eintragen, wenn dauerhaft und nachweisbar."
+)
+sonstiges_einkommen = st.sidebar.number_input("Sonstiges", value=0, step=50, min_value=0, key="sb_sonst", help="Z.B. Unterhalt, Pflegegeld.")
 
 st.sidebar.header("4. Bestands-Immobilien")
 hat_bestand = st.sidebar.checkbox("Schon Immobilien vorhanden?", value=False, key="sb_hat_bestand")
@@ -275,23 +295,32 @@ if hat_bestand:
     with st.sidebar.expander("Details Bestand", expanded=True):
         miete_kalt_pacht = st.number_input("Kaltmiete Einnahmen", value=0, step=50, min_value=0, key="sb_miete")
         bestand_rate = st.number_input("Rate Bestands-Kredit", value=0, step=50, min_value=0, key="sb_bestand_rate")
-        bauspar_rate = st.number_input("Bausparrate / Tilgungsaussetzung", value=0, step=50, min_value=0, key="sb_bauspar")
+        bauspar_rate = st.number_input(
+            "Bausparrate / Tilgungsaussetzung", value=0, step=50, min_value=0, key="sb_bauspar",
+            help="WICHTIG: Sparraten, die zwingend gezahlt werden müssen (z.B. Tilgungsersatz) und nicht für eine neue Rate zur Verfügung stehen."
+        )
         haircut = st.slider("Bank-Ansatz Miete (%)", 60, 90, 75, key="sb_haircut")
         anrechenbare_miete_bestand = miete_kalt_pacht * (haircut / 100)
 
 st.sidebar.header("5. Eigenkapital & Markt")
-eigenkapital = st.sidebar.number_input("Eigenkapital", value=defaults["ek"], step=1000, min_value=0, key="sb_ek")
+eigenkapital = st.sidebar.number_input("Eigenkapital", value=defaults["ek"], step=1000, min_value=0, key="sb_ek", help="Geld auf Konten/Depots, das sofort verfügbar ist.")
 zins_satz = st.sidebar.number_input("Sollzins (%)", value=3.8, step=0.1, min_value=0.1, format="%.2f", key="sb_zins")
 tilgung_satz = st.sidebar.number_input("Tilgung (%)", value=2.0, step=0.1, min_value=0.0, format="%.2f", key="sb_tilgung")
 
 st.sidebar.header("6. Kaufnebenkosten")
 grunderwerbsteuer_prozent = st.sidebar.number_input("Grunderwerbsteuer (%)", value=6.5, step=0.5, min_value=0.0, format="%.2f", key="sb_grunderwerb")
 makler_prozent = st.sidebar.number_input("Makler (%)", value=3.57, step=0.5, min_value=0.0, format="%.2f", key="sb_makler")
-konsum_kredite = st.sidebar.number_input("Konsumkredite (Auto etc.)", value=0, step=50, min_value=0, key="sb_konsum")
+konsum_kredite = st.sidebar.number_input(
+    "Konsumkredite (Auto etc.)", value=0, step=50, min_value=0, key="sb_konsum",
+    help="Monatliche Raten für Auto, Möbel, Elektronik, Handyverträge."
+)
 
 st.sidebar.markdown("---")
 st.sidebar.header("7. Konkretes Objekt prüfen")
-wunsch_kaufpreis = st.sidebar.number_input("Kaufpreis Wunsch-Immobilie", value=0, step=5000, min_value=0, key="sb_wunsch_preis")
+wunsch_kaufpreis = st.sidebar.number_input(
+    "Kaufpreis Wunsch-Immobilie", value=0, step=5000, min_value=0, key="sb_wunsch_preis",
+    help="Gib hier einen Preis ein, um zu sehen, ob du dir dieses konkrete Haus leisten kannst."
+)
 
 # ==========================================
 # BERECHNUNG
@@ -394,13 +423,13 @@ with col1:
 
     st.markdown("---")
     ausgaben_liste = [
-        ("Lebenshaltung", gesamt_lebenshaltung),
+        ("Lebenshaltung (Pauschale)", gesamt_lebenshaltung),
         ("Rate Bestand", bestand_rate),
         ("Bausparer/Tilgung", bauspar_rate),
         ("Konsumkredite", konsum_kredite),
         ("Aktuelle Miete", belastung_durch_aktuelle_miete),
         ("Bewirtschaftung (Neu)", var_bewirtschaftung),
-        ("Puffer", puffer)
+        ("Sicherheits-Puffer", puffer)
     ]
     df_out = pd.DataFrame(ausgaben_liste, columns=["Posten", "Betrag"])
     df_out = df_out[df_out["Betrag"] > 0.01]
@@ -410,7 +439,9 @@ with col1:
 with col2:
     st.subheader("🏠 Ergebnis & Rate")
     if freier_betrag < 0:
-        st.warning(f"⚠️ **Budget nicht ausreichend!** Fehlbetrag: {eur(abs(freier_betrag))}")
+        st.warning(f"⚠️ **Budget nicht ausreichend!**")
+        # HIER IST DER FEHLBETRAG JETZT FETT UND GROSS
+        st.markdown(f"### Fehlbetrag: {eur(abs(freier_betrag))}")
     else:
         st.info(f"🏦 Verfügbares Budget (Rate): **{eur(freier_betrag)}**")
         
@@ -425,7 +456,7 @@ with col2:
                 col_b.success("✅ PASST!")
             else:
                 col_b.error("❌ ZU TEUER")
-                st.caption(f"Fehlt: {eur(wunsch_rate - freier_betrag)}")
+                st.caption(f"Fehlt monatlich: {eur(wunsch_rate - freier_betrag)}")
             
             with st.expander("Details zur Rechnung", expanded=True):
                 st.write(f"Kaufpreis: {eur(wunsch_kaufpreis)}")
