@@ -51,7 +51,7 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 📄 PDF GENERATOR (DETAILLIERT)
+# 📄 PDF GENERATOR (KOMPAKT & PROFI)
 # ==========================================
 class PDF(FPDF):
     def header(self):
@@ -98,6 +98,32 @@ def create_pdf(data):
     pdf.cell(0, 8, txt("1. Monatliche Haushaltsrechnung"), 0, 1, 'L', True)
     pdf.ln(2)
 
+    # --- EINNAHMEN (KOMPAKT) ---
+    pdf.set_font("Arial", "B", 10)
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(100, 6, txt("Gesamteinnahmen (Netto):"))
+    pdf.set_text_color(0, 100, 0) # Grün
+    pdf.cell(30, 6, txt(f"+ {pdf_eur(data['ein_total'])}"), 0, 1, 'R')
+    
+    # Details in Klammern darunter bauen
+    details_list = []
+    if data['ein_haupt'] > 0: details_list.append(f"Gehalt Haupt: {pdf_eur(data['ein_haupt'])}")
+    if data['ein_partner'] > 0: details_list.append(f"Gehalt Partner: {pdf_eur(data['ein_partner'])}")
+    if data['ein_kinder'] > 0: details_list.append(f"Kindergeld: {pdf_eur(data['ein_kinder'])}")
+    if data['ein_neben'] > 0: details_list.append(f"Nebeneinkunft: {pdf_eur(data['ein_neben'])}")
+    if data['ein_sonst'] > 0: details_list.append(f"Sonstiges: {pdf_eur(data['ein_sonst'])}")
+    if data['ein_miete_bestand'] > 0: details_list.append(f"Miete Bestand: {pdf_eur(data['ein_miete_bestand'])}")
+    if data['ein_miete_neu'] > 0: details_list.append(f"Miete Neu (Kalk.): {pdf_eur(data['ein_miete_neu'])}")
+    
+    details_str = ", ".join(details_list)
+    
+    pdf.set_font("Arial", "I", 8)
+    pdf.set_text_color(100, 100, 100)
+    pdf.multi_cell(0, 5, txt(f"(Zusammensetzung: {details_str})"))
+    pdf.ln(2)
+
+    # --- AUSGABEN (DETAILLIERT) ---
+    # Hilfsfunktion für Zeilen
     def row(label, val, note=""):
         pdf.set_font("Arial", "", 10)
         pdf.set_text_color(0, 0, 0)
@@ -109,37 +135,13 @@ def create_pdf(data):
             pdf.cell(60, 6, txt(f"  ({note})"), 0, 0, 'L')
         pdf.ln()
 
-    # EINNAHMEN DETAIL
-    pdf.set_text_color(*col_text)
-    pdf.set_font("Arial", "B", 10)
-    pdf.cell(0, 6, txt("Einnahmen (Detailliert):"), 0, 1)
-
-    row("Gehalt Hauptverdiener", data['ein_haupt'])
-    if data['ein_partner'] > 0: row("Gehalt Partner", data['ein_partner'])
-    if data['ein_kinder'] > 0: row("Kindergeld", data['ein_kinder'])
-    if data['ein_neben'] > 0: row("Nebentätigkeit", data['ein_neben'])
-    if data['ein_sonst'] > 0: row("Sonstiges", data['ein_sonst'])
-    if data['ein_miete_bestand'] > 0: row("Miete Bestand (Netto)", data['ein_miete_bestand'])
-    if data['ein_miete_neu'] > 0: row("Miete Neu (Kalk.)", data['ein_miete_neu'])
-
-    pdf.ln(1)
+    # Linie oben
     pdf.cell(100, 0, "", "T")
     pdf.cell(30, 0, "", "T")
-    pdf.ln(1)
-    
-    pdf.set_font("Arial", "B", 10)
-    pdf.cell(100, 6, txt("Summe Einnahmen:"))
-    pdf.set_text_color(0, 100, 0)
-    pdf.cell(30, 6, txt(f"+ {pdf_eur(data['ein_total'])}"), 0, 1, 'R')
-    pdf.ln(3)
+    pdf.ln(2)
 
-    # AUSGABEN DETAIL
-    pdf.set_text_color(*col_text)
-    pdf.set_font("Arial", "B", 10)
-    pdf.cell(0, 6, txt("Ausgaben (Detailliert):"), 0, 1)
-    
     row("Lebenshaltung (Pauschale)", data['aus_leben'], "Nahrung, Kleidung, Gesundheit")
-    row("Bewirtschaftung (Hauskosten)", data['aus_bewirt'], f"Heizung, Wasser ({data['qm']} qm)")
+    row("Bewirtschaftung (Hauskosten)", data['aus_bewirt'], f"Heizung, Wasser, Müll ({data['qm']} qm)")
     if data['aus_miete'] > 0: row("Aktuelle Kaltmiete", data['aus_miete'], "Bleibt bestehen")
     if data['aus_bestand'] > 0: row("Rate Bestandskredit", data['aus_bestand'])
     if data['aus_bauspar'] > 0: row("Sparrate (Pflicht)", data['aus_bauspar'], "Tilgungsaussetzung")
@@ -147,13 +149,11 @@ def create_pdf(data):
     row("Puffer / Rücklagen", data['aus_puffer'])
 
     pdf.ln(1)
-    pdf.cell(100, 0, "", "T")
-    pdf.cell(30, 0, "", "T")
-    pdf.ln(1)
-    
+    # Summe Ausgaben
     pdf.set_font("Arial", "B", 10)
+    pdf.set_text_color(0, 0, 0)
     pdf.cell(100, 6, txt("Summe Ausgaben:"))
-    pdf.set_text_color(180, 0, 0)
+    pdf.set_text_color(180, 0, 0) # Rot
     pdf.cell(30, 6, txt(f"- {pdf_eur(data['aus_total'])}"), 0, 1, 'R')
 
     # ERGEBNIS
@@ -177,7 +177,9 @@ def create_pdf(data):
          pdf.set_font("Arial", "", 10)
          pdf.cell(100, 6, txt("Bisherige Warmmiete:"))
          pdf.cell(30, 6, txt(pdf_eur(data['alt_warm'])), 0, 1, 'R')
-         pdf.cell(100, 6, txt("Neue Belastung (Rate + NK):"))
+         
+         # HIER IST DIE ÄNDERUNG: EXPLIZITER TEXT
+         pdf.cell(100, 6, txt("Neue Belastung (Rate + NK + Puffer):"))
          pdf.cell(30, 6, txt(pdf_eur(data['neu_last'])), 0, 1, 'R')
          
          diff = data['diff_miete']
