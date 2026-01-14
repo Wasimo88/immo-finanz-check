@@ -16,14 +16,12 @@ def eur(wert):
 def pdf_eur(wert):
     return f"{wert:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " EUR"
 
-# Callback: Berechnet Lebenshaltung neu, wenn Personen geändert werden
 def update_lebenshaltung():
     erw = st.session_state.sb_erwachsene
     kind = st.session_state.sb_kinder
     basis = 1200 if erw == "Alleinstehend" else 1600
     st.session_state.exp_p_lebenshaltung = float(basis + (kind * 400))
 
-# Callback: Berechnet Nebenkosten neu, wenn qm geändert werden
 def update_bewirtschaftung():
     qm = st.session_state.sb_wohnflaeche
     st.session_state.exp_bewirt = float(qm * 4.0)
@@ -53,7 +51,7 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 📄 PDF GENERATOR
+# 📄 PDF GENERATOR (NEU: DETAILLIERTE EINNAHMEN)
 # ==========================================
 class PDF(FPDF):
     def header(self):
@@ -100,19 +98,7 @@ def create_pdf(data):
     pdf.cell(0, 8, txt("1. Monatliche Haushaltsrechnung"), 0, 1, 'L', True)
     pdf.ln(2)
 
-    # Einnahmen
-    pdf.set_text_color(*col_text)
-    pdf.set_font("Arial", "B", 10)
-    pdf.cell(120, 6, txt("Gesamteinnahmen (Netto):"), 0)
-    pdf.set_text_color(0, 100, 0)
-    pdf.cell(70, 6, txt(f"+ {pdf_eur(data['ein'])}"), 0, 1, 'R')
-    pdf.ln(2)
-
-    # Ausgaben Detail
-    pdf.set_text_color(*col_text)
-    pdf.set_font("Arial", "B", 10)
-    pdf.cell(0, 6, txt("Ausgaben (Detailliert):"), 0, 1)
-    
+    # Hilfsfunktion für Zeilen
     def row(label, val, note=""):
         pdf.set_font("Arial", "", 10)
         pdf.set_text_color(0, 0, 0)
@@ -124,6 +110,42 @@ def create_pdf(data):
             pdf.cell(60, 6, txt(f"  ({note})"), 0, 0, 'L')
         pdf.ln()
 
+    # --- EINNAHMEN DETAIL (NEU) ---
+    pdf.set_text_color(*col_text)
+    pdf.set_font("Arial", "B", 10)
+    pdf.cell(0, 6, txt("Einnahmen (Detailliert):"), 0, 1)
+
+    row("Gehalt Hauptverdiener", data['ein_haupt'])
+    if data['ein_partner'] > 0:
+        row("Gehalt Partner", data['ein_partner'])
+    if data['ein_kinder'] > 0:
+        row("Kindergeld", data['ein_kinder'])
+    if data['ein_neben'] > 0:
+        row("Nebentätigkeit", data['ein_neben'])
+    if data['ein_sonst'] > 0:
+        row("Sonstiges", data['ein_sonst'])
+    if data['ein_miete_bestand'] > 0:
+        row("Mieteinnahmen Bestand", data['ein_miete_bestand'], "Netto nach Abschlag")
+    if data['ein_miete_neu'] > 0:
+        row("Mieteinnahmen Neu", data['ein_miete_neu'], "Kalkulatorisch")
+
+    pdf.ln(1)
+    pdf.cell(100, 0, "", "T")
+    pdf.cell(30, 0, "", "T")
+    pdf.ln(1)
+    
+    # Summe Einnahmen
+    pdf.set_font("Arial", "B", 10)
+    pdf.cell(100, 6, txt("Summe Einnahmen:"))
+    pdf.set_text_color(0, 100, 0) # Grün
+    pdf.cell(30, 6, txt(f"+ {pdf_eur(data['ein_total'])}"), 0, 1, 'R')
+    pdf.ln(3)
+
+    # --- AUSGABEN DETAIL ---
+    pdf.set_text_color(*col_text)
+    pdf.set_font("Arial", "B", 10)
+    pdf.cell(0, 6, txt("Ausgaben (Detailliert):"), 0, 1)
+    
     row("Lebenshaltung (Pauschale)", data['aus_leben'], "Nahrung, Kleidung, Gesundheit")
     row("Bewirtschaftung (Hauskosten)", data['aus_bewirt'], f"Heizung, Wasser ({data['qm']} qm)")
     
@@ -142,10 +164,12 @@ def create_pdf(data):
     pdf.cell(100, 0, "", "T")
     pdf.cell(30, 0, "", "T")
     pdf.ln(1)
+    
+    # Summe Ausgaben
     pdf.set_font("Arial", "B", 10)
     pdf.cell(100, 6, txt("Summe Ausgaben:"))
-    pdf.set_text_color(180, 0, 0)
-    pdf.cell(30, 6, txt(f"- {pdf_eur(data['aus'])}"), 0, 1, 'R')
+    pdf.set_text_color(180, 0, 0) # Rot
+    pdf.cell(30, 6, txt(f"- {pdf_eur(data['aus_total'])}"), 0, 1, 'R')
 
     # ERGEBNIS
     pdf.ln(4)
@@ -156,7 +180,7 @@ def create_pdf(data):
     pdf.cell(70, 10, txt(f"{pdf_eur(data['frei'])}"), 0, 1, 'R', True)
     pdf.ln(8)
 
-    # VERGLEICH
+    # VERGLEICH (OPTIONAL)
     if data['diff_miete'] is not None:
          pdf.set_fill_color(*col_fill)
          pdf.set_font("Arial", "B", 12)
@@ -277,11 +301,10 @@ with st.expander("📂 Speichern / Laden", expanded=False):
 
 # --- SIDEBAR ---
 st.sidebar.header("1. Projekt & Nutzung")
-# Widget-Pattern: Kein 'value', wenn key existiert
 if "sb_name" not in st.session_state: st.session_state.sb_name = defaults["kunde"]
 kunden_name = st.sidebar.text_input("Name", key="sb_name")
 
-# WICHTIG: Hier sind wieder die ALTEN Bezeichnungen, damit das Laden klappt!
+# OPTIONEN MÜSSEN GLEICH BLEIBEN ZUM LADEN ALTER DATEIEN
 OPTIONS_NUTZUNG = [
     "Eigenheim (Nur Selbstbezug)", 
     "Eigenheim mit Vermietung (Einliegerw./MFH)", 
@@ -300,7 +323,6 @@ wohnflaeche = st.sidebar.number_input(
 aktuelle_warmmiete = 0.0
 neue_miete_einnahme = 0.0
 
-# Logik für Felder basierend auf Nutzung
 if "sb_akt_miete" not in st.session_state: st.session_state.sb_akt_miete = defaults["aktuelle_miete"]
 
 if nutzungsart == OPTIONS_NUTZUNG[0]: # Eigenheim
@@ -356,6 +378,9 @@ if anzahl_erwachsene == "Paar (2 Personen)":
     gehalt_partner = st.sidebar.number_input("Gehalt Partner", step=50, min_value=0, key="sb_gehalt_p")
 
 kindergeld = anzahl_kinder * 250
+if "sb_neben" not in st.session_state: st.session_state.sb_neben = 0
+nebeneinkommen = st.sidebar.number_input("Minijob / Nebentätigkeit", step=50, min_value=0, key="sb_neben")
+
 if "sb_sonst" not in st.session_state: st.session_state.sb_sonst = 0
 sonstiges = st.sidebar.number_input("Sonstiges / Bonus", step=50, min_value=0, key="sb_sonst")
 
@@ -393,7 +418,7 @@ if nutzungsart != OPTIONS_NUTZUNG[0]:
 
 belastung_alte_miete = aktuelle_warmmiete if nutzungsart == OPTIONS_NUTZUNG[2] else 0.0
 
-einnahmen = gehalt_haupt + gehalt_partner + kindergeld + sonstiges + miete_bestand_anrechenbar + miete_neu_calc
+einnahmen = gehalt_haupt + gehalt_partner + kindergeld + nebeneinkommen + sonstiges + miete_bestand_anrechenbar + miete_neu_calc
 ausgaben = var_lebenshaltung + var_bewirtschaftung + var_puffer + konsum + bauspar + rate_bestand + belastung_alte_miete
 frei = einnahmen - ausgaben
 
@@ -413,17 +438,25 @@ if aktuelle_warmmiete > 0 and nutzungsart != OPTIONS_NUTZUNG[2]:
     diff_miete = neue_wohnkosten - aktuelle_warmmiete
 
 # ==========================================
-# UI
+# UI OUTPUT
 # ==========================================
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("💰 Haushaltsrechnung")
-    df_in = pd.DataFrame({
-        "Posten": ["Gehälter", "Kindergeld", "Sonstiges", "Miete (bereinigt)"],
-        "Betrag": [gehalt_haupt+gehalt_partner, kindergeld, sonstiges, miete_bestand_anrechenbar+miete_neu_calc]
-    })
-    st.dataframe(df_in[df_in["Betrag"] > 0], hide_index=True, use_container_width=True)
+    
+    # NEU: Detaillierte Tabelle für Einnahmen
+    ein_liste = []
+    if gehalt_haupt > 0: ein_liste.append(["Gehalt Hauptverdiener", gehalt_haupt])
+    if gehalt_partner > 0: ein_liste.append(["Gehalt Partner", gehalt_partner])
+    if kindergeld > 0: ein_liste.append(["Kindergeld", kindergeld])
+    if nebeneinkommen > 0: ein_liste.append(["Nebentätigkeit", nebeneinkommen])
+    if sonstiges > 0: ein_liste.append(["Sonstiges", sonstiges])
+    if miete_bestand_anrechenbar > 0: ein_liste.append(["Miete Bestand (Netto)", miete_bestand_anrechenbar])
+    if miete_neu_calc > 0: ein_liste.append(["Miete Neu (Kalk.)", miete_neu_calc])
+    
+    df_in = pd.DataFrame(ein_liste, columns=["Posten", "Betrag"])
+    st.dataframe(df_in, hide_index=True, use_container_width=True)
     st.success(f"Einnahmen: **{eur(einnahmen)}**")
 
     st.markdown("---")
@@ -462,13 +495,19 @@ with col2:
 
     # PDF EXPORT
     pdf_data = {
-        "name": kunden_name, "scenario": nutzungsart, "ein": einnahmen, "aus": ausgaben, 
+        "name": kunden_name, "scenario": nutzungsart, "ein_total": einnahmen, "aus_total": ausgaben, 
         "frei": frei, "zins": zins, "tilg": tilgung, "kaufpreis": max_preis, 
         "nk": max_preis * (nk_prozent/100), "ek": eigenkapital, "kredit": max_kredit,
         "wunsch_preis": wunsch_preis, "wunsch_rate": wunsch_rate,
+        # Details Einnahmen für PDF
+        "ein_haupt": gehalt_haupt, "ein_partner": gehalt_partner, "ein_kinder": kindergeld,
+        "ein_neben": nebeneinkommen, "ein_sonst": sonstiges, 
+        "ein_miete_bestand": miete_bestand_anrechenbar, "ein_miete_neu": miete_neu_calc,
+        # Details Ausgaben für PDF
         "aus_leben": var_lebenshaltung, "aus_bewirt": var_bewirtschaftung, "qm": wohnflaeche,
         "aus_puffer": var_puffer, "aus_konsum": konsum, "aus_bauspar": bauspar,
         "aus_bestand": rate_bestand, "aus_miete": belastung_alte_miete,
+        # Vergleich
         "diff_miete": diff_miete, "alt_warm": aktuelle_warmmiete, "neu_last": (frei + var_bewirtschaftung + var_puffer) if frei > 0 else 0
     }
     
