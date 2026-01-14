@@ -209,20 +209,29 @@ def create_pdf(data):
          pdf.ln(5)
 
     # 3. WUNSCH OBJEKT
+# LOGIK FÜR NUMMERIERUNG
+    # Wenn Abschnitt 2 (Vergleich) gedruckt wurde, ist der nächste 3. Sonst 2.
+    nummer_plan = "3"
+    if data['diff_miete'] is None:
+        nummer_plan = "2"
+
+    # 3. (oder 2.) WUNSCH OBJEKT & FINANZIERUNGSAUFBAU
     if data['wunsch_preis'] > 0:
         pdf.set_fill_color(*col_fill)
         pdf.set_font("Arial", "B", 12)
         pdf.set_text_color(*col_header)
-        pdf.cell(0, 8, txt(f"3. Finanzierungsplan Wunsch-Objekt"), 0, 1, 'L', True)
+        # Hier nutzen wir die variable Nummer
+        pdf.cell(0, 8, txt(f"{nummer_plan}. Finanzierungsplan Wunsch-Objekt"), 0, 1, 'L', True)
         pdf.ln(2)
         
         pdf.set_text_color(0,0,0)
         pdf.set_font("Arial", "", 10)
         
+        # Tabelle für Finanzbedarf
         pdf.cell(100, 6, txt("Kaufpreis:"))
         pdf.cell(30, 6, txt(pdf_eur(data['wunsch_preis'])), 0, 1, 'R')
         
-        pdf.cell(100, 6, txt(f"Kaufnebenkosten ({data['nk_prozent']} %):"))
+        pdf.cell(100, 6, txt(f"Kaufnebenkosten ({data['nk_prozent']:.2f} %):"))
         pdf.cell(30, 6, txt(f"+ {pdf_eur(data['wunsch_nk'])}"), 0, 1, 'R')
         
         if data['renovierung'] > 0:
@@ -244,6 +253,7 @@ def create_pdf(data):
         
         pdf.ln(4)
         
+        # Rate Check
         pdf.set_font("Arial", "", 11)
         pdf.cell(120, 8, txt(f"Notwendige Rate ({data['zins']}% Zins + {data['tilg']}% Tilgung):"), 0)
         pdf.cell(70, 8, txt(f"{pdf_eur(data['wunsch_rate'])}"), 0, 1, 'R')
@@ -255,19 +265,22 @@ def create_pdf(data):
             pdf.set_fill_color(200, 255, 200)
             pdf.set_text_color(0, 100, 0)
             pdf.set_font("Arial", "B", 12)
-            pdf.cell(0, 10, txt("Ergebnis: MACHBAR ✅"), 1, 1, 'C', True)
+            # HIER GEÄNDERT: Kein Emoji mehr, sondern Text
+            pdf.cell(0, 10, txt("Ergebnis: MACHBAR (Im Budget)"), 1, 1, 'C', True)
         else:
             pdf.set_fill_color(255, 200, 200)
             pdf.set_text_color(180, 0, 0)
             pdf.set_font("Arial", "B", 12)
-            pdf.cell(0, 10, txt(f"Ergebnis: ÜBERSTEIGT BUDGET (Fehlt: {pdf_eur(diff_wunsch)}) ❌"), 1, 1, 'C', True)
+            # HIER GEÄNDERT: Kein Emoji mehr
+            pdf.cell(0, 10, txt(f"Ergebnis: ÜBERSTEIGT BUDGET (Fehlt: {pdf_eur(diff_wunsch)})"), 1, 1, 'C', True)
 
-    # MAXIMALER PREIS
+    # MAXIMALER PREIS (Falls kein Wunschobjekt)
     else:
         pdf.set_fill_color(*col_fill)
         pdf.set_font("Arial", "B", 12)
         pdf.set_text_color(*col_header)
-        pdf.cell(0, 8, txt("3. Maximaler Kaufpreis (Kalkulation)"), 0, 1, 'L', True)
+        # Auch hier Nummerierung anpassen
+        pdf.cell(0, 8, txt(f"{nummer_plan}. Maximaler Kaufpreis (Kalkulation)"), 0, 1, 'L', True)
         pdf.ln(2)
         
         pdf.set_text_color(0,0,0)
@@ -577,3 +590,4 @@ if wunsch_preis > 0:
     fig.add_hline(y=wunsch_rate, line_dash="dot", annotation_text="Nötige Rate (Wunsch)", line_color="orange")
 fig.update_layout(showlegend=False)
 st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
+
