@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import json
 from fpdf import FPDF
 
@@ -32,7 +31,7 @@ def update_lebenshaltung():
     basis = 1000.0 if erw == "Alleinstehend" else 1700.0
     basis += (kind * 350.0)
 
-    # 2. Lifestyle-Zuschlag
+    # 2. Lifestyle-Zuschlag (Bank-Logik)
     zuschlag = 0.0
     if total_netto > 4000: zuschlag += 200 
     if total_netto > 6000: zuschlag += 300 
@@ -69,7 +68,7 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 📄 PDF GENERATOR (OPTIMIERT)
+# 📄 PDF GENERATOR
 # ==========================================
 class PDF(FPDF):
     def header(self):
@@ -114,17 +113,15 @@ def create_pdf(data):
     pdf.set_font("Arial", "B", 12)
     pdf.set_text_color(*col_header)
     pdf.cell(0, 8, txt("1. Monatliche Haushaltsrechnung"), 0, 1, 'L', True)
-    pdf.ln(4) # Etwas Abstand nach dem grauen Balken
+    pdf.ln(4)
 
-    # --- EINNAHMEN (KOMPAKT) ---
-    # Hier haben wir die "Doppelte" Überschrift entfernt!
+    # EINNAHMEN
     pdf.set_font("Arial", "B", 10)
     pdf.set_text_color(0, 0, 0)
     pdf.cell(100, 6, txt("Gesamteinnahmen (Netto):"))
-    pdf.set_text_color(0, 100, 0) # Grün
+    pdf.set_text_color(0, 100, 0)
     pdf.cell(30, 6, txt(f"+ {pdf_eur(data['ein_total'])}"), 0, 1, 'R')
     
-    # Details String bauen
     details_list = []
     if data['ein_haupt'] > 0: details_list.append(f"Gehalt Haupt: {pdf_eur(data['ein_haupt'])}")
     if data['ein_partner'] > 0: details_list.append(f"Gehalt Partner: {pdf_eur(data['ein_partner'])}")
@@ -135,14 +132,12 @@ def create_pdf(data):
     if data['ein_miete_neu'] > 0: details_list.append(f"Miete Neu (Kalk.): {pdf_eur(data['ein_miete_neu'])}")
     
     details_str = ", ".join(details_list)
-    
-    # Details anzeigen (klein und grau)
     pdf.set_font("Arial", "I", 8)
     pdf.set_text_color(100, 100, 100)
     pdf.multi_cell(0, 5, txt(f"(Zusammensetzung: {details_str})"))
     pdf.ln(2)
 
-    # --- AUSGABEN (DETAILLIERT) ---
+    # AUSGABEN
     pdf.set_text_color(*col_text)
     pdf.set_font("Arial", "B", 10)
     pdf.cell(0, 6, txt("Ausgaben (Detailliert):"), 0, 1)
@@ -158,7 +153,6 @@ def create_pdf(data):
             pdf.cell(60, 6, txt(f"  ({note})"), 0, 0, 'L')
         pdf.ln()
 
-    # Linie oben
     pdf.cell(100, 0, "", "T")
     pdf.cell(30, 0, "", "T")
     pdf.ln(2)
@@ -172,14 +166,13 @@ def create_pdf(data):
     row("Puffer / Rücklagen", data['aus_puffer'])
 
     pdf.ln(1)
-    # Summe Ausgaben
     pdf.set_font("Arial", "B", 10)
     pdf.set_text_color(0, 0, 0)
     pdf.cell(100, 6, txt("Summe Ausgaben:"))
-    pdf.set_text_color(180, 0, 0) # Rot
+    pdf.set_text_color(180, 0, 0)
     pdf.cell(30, 6, txt(f"- {pdf_eur(data['aus_total'])}"), 0, 1, 'R')
 
-    # ERGEBNIS
+    # ERGEBNIS HAUSHALT
     pdf.ln(4)
     pdf.set_fill_color(230, 240, 255)
     pdf.set_font("Arial", "B", 12)
@@ -188,7 +181,7 @@ def create_pdf(data):
     pdf.cell(70, 10, txt(f"{pdf_eur(data['frei'])}"), 0, 1, 'R', True)
     pdf.ln(8)
 
-    # VERGLEICH
+    # 2. VERGLEICH
     if data['diff_miete'] is not None:
          pdf.set_fill_color(*col_fill)
          pdf.set_font("Arial", "B", 12)
@@ -200,8 +193,6 @@ def create_pdf(data):
          pdf.set_font("Arial", "", 10)
          pdf.cell(100, 6, txt("Bisherige Warmmiete:"))
          pdf.cell(30, 6, txt(pdf_eur(data['alt_warm'])), 0, 1, 'R')
-         
-         # Expliziter Text für Klarheit
          pdf.cell(100, 6, txt("Neue Belastung (Rate + NK + Puffer):"))
          pdf.cell(30, 6, txt(pdf_eur(data['neu_last'])), 0, 1, 'R')
          
@@ -216,59 +207,75 @@ def create_pdf(data):
              pdf.cell(0, 8, txt(f"-> Ersparnis: {pdf_eur(abs(diff))}"), 0, 1)
          pdf.ln(5)
 
-    # KAUFPREIS
-    pdf.set_fill_color(*col_fill)
-    pdf.set_font("Arial", "B", 12)
-    pdf.set_text_color(*col_header)
-    pdf.cell(0, 8, txt("3. Maximaler Kaufpreis (Kalkulation)"), 0, 1, 'L', True)
-    pdf.ln(2)
-
-    pdf.set_text_color(0,0,0)
-    pdf.set_font("Arial", "", 10)
-    pdf.cell(0, 6, txt(f"Basis: {data['zins']}% Zins | {data['tilg']}% Tilgung"), ln=True)
-    pdf.ln(2)
-
-    pdf.set_draw_color(28, 58, 106)
-    pdf.set_line_width(0.5)
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(120, 10, txt("Max. Kaufpreis der Immobilie:"), 1)
-    pdf.cell(70, 10, txt(f"{pdf_eur(data['kaufpreis'])}"), 1, 1, 'R')
-    pdf.set_font("Arial", "", 11)
-    pdf.cell(120, 8, txt("dazu Kaufnebenkosten:"), 1)
-    pdf.cell(70, 8, txt(f"+ {pdf_eur(data['nk'])}"), 1, 1, 'R')
-    pdf.cell(120, 8, txt("abzüglich Eigenkapital:"), 1)
-    pdf.cell(70, 8, txt(f"- {pdf_eur(data['ek'])}"), 1, 1, 'R')
-    pdf.set_fill_color(220, 220, 220)
-    pdf.set_font("Arial", "B", 11)
-    pdf.cell(120, 10, txt("Notwendiges Bankdarlehen:"), 1, 0, 'L', True)
-    pdf.cell(70, 10, txt(f"{pdf_eur(data['kredit'])}"), 1, 1, 'R', True)
-
-    # WUNSCH
+    # 3. WUNSCH OBJEKT & FINANZIERUNGSAUFBAU
     if data['wunsch_preis'] > 0:
-        pdf.ln(8)
         pdf.set_fill_color(*col_fill)
         pdf.set_font("Arial", "B", 12)
         pdf.set_text_color(*col_header)
-        pdf.cell(0, 8, txt(f"4. Prüfung Wunsch-Objekt ({pdf_eur(data['wunsch_preis'])})"), 0, 1, 'L', True)
+        pdf.cell(0, 8, txt(f"3. Finanzierungsplan Wunsch-Objekt"), 0, 1, 'L', True)
         pdf.ln(2)
         
         pdf.set_text_color(0,0,0)
+        pdf.set_font("Arial", "", 10)
+        
+        # Tabelle für Finanzbedarf
+        pdf.cell(100, 6, txt("Kaufpreis:"))
+        pdf.cell(30, 6, txt(pdf_eur(data['wunsch_preis'])), 0, 1, 'R')
+        
+        pdf.cell(100, 6, txt(f"Kaufnebenkosten ({data['nk_prozent']} %):"))
+        pdf.cell(30, 6, txt(f"+ {pdf_eur(data['wunsch_nk'])}"), 0, 1, 'R')
+        
+        if data['renovierung'] > 0:
+            pdf.cell(100, 6, txt("Modernisierung / Renovierung:"))
+            pdf.cell(30, 6, txt(f"+ {pdf_eur(data['renovierung'])}"), 0, 1, 'R')
+            
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(100, 6, txt("Gesamtkosten (Investition):"), "T")
+        pdf.cell(30, 6, txt(f"= {pdf_eur(data['wunsch_invest'])}"), "T", 1, 'R')
+        
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(100, 6, txt("Eigenkapital:"))
+        pdf.cell(30, 6, txt(f"- {pdf_eur(data['ek'])}"), 0, 1, 'R')
+        
+        pdf.set_font("Arial", "B", 11)
+        pdf.set_fill_color(220, 220, 220)
+        pdf.cell(100, 8, txt("Zu finanzierendes Darlehen:"), 0, 0, 'L', True)
+        pdf.cell(30, 8, txt(f"{pdf_eur(data['wunsch_darlehen'])}"), 0, 1, 'R', True)
+        
+        pdf.ln(4)
+        
+        # Rate Check
         pdf.set_font("Arial", "", 11)
-        pdf.cell(120, 8, txt("Erforderliche Rate für dieses Objekt:"), 0)
+        pdf.cell(120, 8, txt(f"Notwendige Rate ({data['zins']}% Zins + {data['tilg']}% Tilgung):"), 0)
         pdf.cell(70, 8, txt(f"{pdf_eur(data['wunsch_rate'])}"), 0, 1, 'R')
         
         pdf.ln(2)
         diff_wunsch = data['wunsch_rate'] - data['frei']
+        
         if data['wunsch_rate'] <= data['frei']:
             pdf.set_fill_color(200, 255, 200)
             pdf.set_text_color(0, 100, 0)
             pdf.set_font("Arial", "B", 12)
-            pdf.cell(0, 10, txt("Ergebnis: PASST INS BUDGET"), 1, 1, 'C', True)
+            pdf.cell(0, 10, txt("Ergebnis: MACHBAR ✅"), 1, 1, 'C', True)
         else:
             pdf.set_fill_color(255, 200, 200)
             pdf.set_text_color(180, 0, 0)
             pdf.set_font("Arial", "B", 12)
-            pdf.cell(0, 10, txt(f"Ergebnis: ÜBERSTEIGT BUDGET (Fehlt: {pdf_eur(diff_wunsch)})"), 1, 1, 'C', True)
+            pdf.cell(0, 10, txt(f"Ergebnis: ÜBERSTEIGT BUDGET (Fehlt: {pdf_eur(diff_wunsch)}) ❌"), 1, 1, 'C', True)
+
+    # 4. MAXIMALER PREIS
+    else:
+        # Falls kein Wunschobjekt angegeben, zeige Max-Berechnung
+        pdf.set_fill_color(*col_fill)
+        pdf.set_font("Arial", "B", 12)
+        pdf.set_text_color(*col_header)
+        pdf.cell(0, 8, txt("3. Maximaler Kaufpreis (Kalkulation)"), 0, 1, 'L', True)
+        pdf.ln(2)
+        
+        pdf.set_text_color(0,0,0)
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(120, 10, txt("Max. Kaufpreis der Immobilie:"), 1)
+        pdf.cell(70, 10, txt(f"{pdf_eur(data['kaufpreis'])}"), 1, 1, 'R')
 
     pdf.ln(10)
     pdf.set_text_color(100, 100, 100)
@@ -282,7 +289,8 @@ def create_pdf(data):
 defaults = {
     "kinder": 1, "gehalt_h": 3000, "gehalt_p": 0, "ek": 60000,
     "kunde": "Kunde", "aktuelle_miete": 1000, "wohnflaeche": 120,
-    "exp_bewirt": 480.0, "exp_p_lebenshaltung": 1600.0
+    "exp_bewirt": 480.0, "exp_p_lebenshaltung": 1600.0,
+    "sb_grunderwerb": 6.5, "sb_notar": 2.0, "sb_makler": 3.57, "renovierung": 0
 }
 
 def load_data_callback():
@@ -292,7 +300,6 @@ def load_data_callback():
             data = json.load(uploaded)
             for key, value in data.items():
                 st.session_state[key] = value
-            # HIER: Berechnung nach Laden anstoßen
             update_lebenshaltung()
             update_bewirtschaftung()
             st.toast("✅ Daten geladen & neu berechnet!", icon="🎉")
@@ -311,7 +318,7 @@ with st.expander("📂 Speichern / Laden", expanded=False):
     with col_dl:
         st.info("Download unten!")
 
-# --- SIDEBAR: PROJEKT ---
+# --- SIDEBAR: 1. PROJEKT ---
 st.sidebar.header("1. Projekt & Nutzung")
 if "sb_name" not in st.session_state: st.session_state.sb_name = defaults["kunde"]
 kunden_name = st.sidebar.text_input("Name", key="sb_name")
@@ -343,7 +350,7 @@ else:
     if "sb_neue_miete_ka" not in st.session_state: st.session_state.sb_neue_miete_ka = 600
     neue_miete_einnahme = st.sidebar.number_input("Mieteinnahme Neu (Kalt)", step=50, min_value=0, key="sb_neue_miete_ka")
 
-# --- SIDEBAR: EINKOMMEN ---
+# --- SIDEBAR: 2. EINKOMMEN ---
 st.sidebar.header("2. Einkommen (Netto)")
 if "sb_gehalt_h" not in st.session_state: st.session_state.sb_gehalt_h = defaults["gehalt_h"]
 gehalt_haupt = st.sidebar.number_input("Gehalt Haupt", step=50, min_value=0, key="sb_gehalt_h", on_change=update_lebenshaltung)
@@ -362,17 +369,16 @@ kindergeld = anzahl_kinder * 250
 
 if "sb_neben" not in st.session_state: st.session_state.sb_neben = 0
 nebeneinkommen = st.sidebar.number_input("Minijob / Nebentätigkeit", step=50, min_value=0, key="sb_neben", on_change=update_lebenshaltung)
-
 if "sb_sonst" not in st.session_state: st.session_state.sb_sonst = 0
 sonstiges = st.sidebar.number_input("Sonstiges / Bonus", step=50, min_value=0, key="sb_sonst", on_change=update_lebenshaltung)
 
-# --- SIDEBAR: AUSGABEN ---
+# --- SIDEBAR: 3. AUSGABEN ---
 st.sidebar.markdown("---")
 st.sidebar.header("3. Ausgaben (Bank-Logik)")
 
-# ZWISCHENBERECHNUNG (Nötig für Info-Text)
+# ZWISCHENBERECHNUNG
 aktuelles_gesamt_netto = gehalt_haupt + gehalt_partner + kindergeld + nebeneinkommen + sonstiges
-# Kopieren der Funktion hier rein für direkten Zugriff
+# Lokale Hilfsfunktion für Richtwert
 def get_bank_richtwert_local(netto, erw, kind):
     basis = 1000.0 if erw == "Alleinstehend" else 1700.0
     basis += (kind * 350.0)
@@ -389,14 +395,14 @@ if "exp_bewirt" not in st.session_state: update_bewirtschaftung()
 
 var_lebenshaltung = st.sidebar.number_input(
     "Lebenshaltung (Pauschale)", key="exp_p_lebenshaltung", step=50.0, min_value=0.0,
-    help="Enthält: Essen, Kleidung, Gesundheit, Mobilität. Basierend auf Personenzahl & Einkommensklasse."
+    help="Enthält: Essen, Kleidung, Gesundheit, Mobilität."
 )
-st.sidebar.info(f"💡 Bank-Richtwert bei deinem Einkommen: {eur(bank_richtwert)}")
+st.sidebar.info(f"💡 Bank-Richtwert: {eur(bank_richtwert)}")
 st.sidebar.markdown("[📊 Quelle Destatis](https://www.destatis.de/DE/Themen/Gesellschaft-Umwelt/Einkommen-Konsum-Lebensbedingungen/Konsumausgaben-Lebenshaltungskosten/_inhalt.html)")
 
 var_bewirtschaftung = st.sidebar.number_input(
     "Bewirtschaftung (Nebenkosten)", key="exp_bewirt", step=10.0, min_value=0.0,
-    help=f"Automatisch: {wohnflaeche} m² x 4,00 €. (Heizung, Wasser, Müll)."
+    help=f"Automatisch: {wohnflaeche} m² x 4,00 €."
 )
 st.sidebar.markdown("[📊 Quelle Mieterbund](https://www.mieterbund.de/service/betriebskostenspiegel.html)")
 
@@ -407,13 +413,12 @@ konsum = st.sidebar.number_input("Konsumkredite (Rate)", step=50, min_value=0, k
 if "sb_bauspar" not in st.session_state: st.session_state.sb_bauspar = 0
 bauspar = st.sidebar.number_input("Sparraten Pflicht", step=50, min_value=0, key="sb_bauspar")
 
-# --- SIDEBAR: MARKT & BESTAND ---
-st.sidebar.header("4. Markt & Bestand")
+# --- SIDEBAR: 4. KAPITAL & KREDIT ---
+st.sidebar.header("4. Eigenkapital & Zinsen")
 if "sb_ek" not in st.session_state: st.session_state.sb_ek = defaults["ek"]
 eigenkapital = st.sidebar.number_input("Eigenkapital", step=1000, min_value=0, key="sb_ek")
 zins = st.sidebar.number_input("Zins (%)", value=3.8, step=0.1, min_value=0.1, key="sb_zins")
 tilgung = st.sidebar.number_input("Tilgung (%)", value=2.0, step=0.1, min_value=0.0, key="sb_tilgung")
-nk_prozent = 6.5 + 2.0 + 3.57 
 
 miete_bestand_anrechenbar = 0.0
 rate_bestand = 0.0
@@ -422,8 +427,28 @@ if st.sidebar.checkbox("Immobilienbestand?", key="sb_hat_bestand"):
     rate_bestand = st.sidebar.number_input("Rate Bestand", value=0, min_value=0)
     miete_bestand_anrechenbar = miete_raw * 0.75 
 
+# --- SIDEBAR: 5. KAUFNEBENKOSTEN (NEU!) ---
+st.sidebar.header("5. Kaufnebenkosten (Variabel)")
+
+if "sb_grunderwerb" not in st.session_state: st.session_state.sb_grunderwerb = defaults["sb_grunderwerb"]
+grunderwerb = st.sidebar.number_input("Grunderwerbsteuer (%)", step=0.5, min_value=0.0, key="sb_grunderwerb", help="Je nach Bundesland (z.B. 3,5% - 6,5%).")
+
+if "sb_notar" not in st.session_state: st.session_state.sb_notar = defaults["sb_notar"]
+notar = st.sidebar.number_input("Notar & Grundbuch (%)", step=0.1, min_value=0.0, key="sb_notar", help="Üblich sind ca. 2,0%.")
+
+if "sb_makler" not in st.session_state: st.session_state.sb_makler = defaults["sb_makler"]
+makler = st.sidebar.number_input("Maklerprovision (%)", step=0.1, min_value=0.0, key="sb_makler", help="Oft 3,57% (inkl. MwSt) oder 0% bei Privatkauf.")
+
+nk_prozent_gesamt = grunderwerb + notar + makler
+st.sidebar.caption(f"Gesamt-Nebenkosten: **{nk_prozent_gesamt:.2f} %**")
+
+# --- SIDEBAR: 6. OBJEKT ---
+st.sidebar.header("6. Konkretes Objekt prüfen")
 if "sb_wunsch_preis" not in st.session_state: st.session_state.sb_wunsch_preis = 0
-wunsch_preis = st.sidebar.number_input("Check: Kaufpreis Objekt", step=5000, min_value=0, key="sb_wunsch_preis")
+wunsch_preis = st.sidebar.number_input("Kaufpreis Objekt", step=5000, min_value=0, key="sb_wunsch_preis")
+
+# NEU: RENOVIERUNG
+renovierung = st.sidebar.number_input("Renovierung / Modernisierung", value=0, step=1000, min_value=0, help="Zusätzlicher Kreditbedarf für Sanierung.")
 
 # ==========================================
 # RECHNUNG & UI OUTPUT
@@ -432,24 +457,38 @@ miete_neu_calc = 0.0
 if nutzungsart != OPTIONS_NUTZUNG[0]:
     miete_neu_calc = neue_miete_einnahme * 0.80 
 belastung_alte_miete = aktuelle_warmmiete if nutzungsart == OPTIONS_NUTZUNG[2] else 0.0
+
 einnahmen = gehalt_haupt + gehalt_partner + kindergeld + nebeneinkommen + sonstiges + miete_bestand_anrechenbar + miete_neu_calc
 ausgaben = var_lebenshaltung + var_bewirtschaftung + var_puffer + konsum + bauspar + rate_bestand + belastung_alte_miete
 frei = einnahmen - ausgaben
 annuitaet = zins + tilgung
+
+# Max Kaufpreis Berechnung
 max_kredit = (frei * 12 * 100) / annuitaet if (frei > 0 and annuitaet > 0) else 0
-max_preis = (max_kredit + eigenkapital) / (1 + (nk_prozent/100))
+max_preis = (max_kredit + eigenkapital) / (1 + (nk_prozent_gesamt/100))
 
+# Wunsch Objekt Berechnung
 wunsch_rate = 0.0
-diff_miete = None
-if wunsch_preis > 0:
-    invest = wunsch_preis * (1 + (nk_prozent/100))
-    bedarf = invest - eigenkapital
-    wunsch_rate = (bedarf * annuitaet) / 100 / 12
+wunsch_nk_euro = 0.0
+wunsch_invest = 0.0
+wunsch_darlehen = 0.0
 
+if wunsch_preis > 0:
+    wunsch_nk_euro = wunsch_preis * (nk_prozent_gesamt/100)
+    wunsch_invest = wunsch_preis + wunsch_nk_euro + renovierung
+    wunsch_darlehen = wunsch_invest - eigenkapital
+    
+    if wunsch_darlehen > 0:
+        wunsch_rate = (wunsch_darlehen * annuitaet) / 100 / 12
+    else:
+        wunsch_rate = 0 # Kein Kredit nötig
+
+diff_miete = None
 if aktuelle_warmmiete > 0 and nutzungsart != OPTIONS_NUTZUNG[2]:
     neue_wohnkosten = frei + var_bewirtschaftung + var_puffer
     diff_miete = neue_wohnkosten - aktuelle_warmmiete
 
+# UI
 col1, col2 = st.columns(2)
 with col1:
     st.markdown(f"### 🎯 Analyse für: {kunden_name}")
@@ -471,7 +510,7 @@ with col1:
     
     st.markdown("---")
     df_out = pd.DataFrame({
-        "Posten": ["Lebenshaltung (Pauschale)", "Bewirtschaftung (Haus)", "Puffer", "Kredite/Spar", "Bestand", "Alte Miete"],
+        "Posten": ["Lebenshaltung", "Bewirtschaftung", "Puffer", "Kredite/Spar", "Bestand", "Alte Miete"],
         "Betrag": [var_lebenshaltung, var_bewirtschaftung, var_puffer, konsum+bauspar, rate_bestand, belastung_alte_miete]
     })
     st.dataframe(df_out[df_out["Betrag"] > 0], hide_index=True, use_container_width=True)
@@ -486,10 +525,10 @@ with col2:
         if diff_miete is not None:
             st.markdown("#### Miete vs. Eigentum")
             if diff_miete > 0:
-                st.warning(f"Du zahlst **{eur(diff_miete)}** mehr als jetzt.")
+                st.warning(f"Mehrbelastung: **{eur(diff_miete)}**")
             else:
-                st.success(f"Du sparst **{eur(abs(diff_miete))}** gegenüber jetzt.")
-            st.caption("Vergleich: Alte Miete vs. Neue Rate + NK + Puffer")
+                st.success(f"Ersparnis: **{eur(abs(diff_miete))}**")
+            st.caption("Vergleich: Alte Miete vs. Rate + Nebenkosten + Puffer")
             st.markdown("---")
 
         if wunsch_preis > 0:
@@ -501,6 +540,14 @@ with col2:
             else:
                 col_b.error("❌ ZU TEUER")
                 st.caption(f"Fehlt: {eur(wunsch_rate - frei)}")
+            
+            with st.expander("Details Investition"):
+                st.write(f"Kaufpreis: {eur(wunsch_preis)}")
+                st.write(f"+ Nebenkosten ({nk_prozent_gesamt:.2f}%): {eur(wunsch_nk_euro)}")
+                if renovierung > 0:
+                    st.write(f"+ Renovierung: {eur(renovierung)}")
+                st.write(f"- Eigenkapital: {eur(eigenkapital)}")
+                st.write(f"**= Darlehen: {eur(wunsch_darlehen)}**")
 
     # DATEINAMEN MIT KUNDENNAME
     safe_name = kunden_name.replace(" ", "_")
@@ -508,8 +555,9 @@ with col2:
     pdf_data = {
         "name": kunden_name, "scenario": nutzungsart, "ein_total": einnahmen, "aus_total": ausgaben, 
         "frei": frei, "zins": zins, "tilg": tilgung, "kaufpreis": max_preis, 
-        "nk": max_preis * (nk_prozent/100), "ek": eigenkapital, "kredit": max_kredit,
-        "wunsch_preis": wunsch_preis, "wunsch_rate": wunsch_rate,
+        "ek": eigenkapital, "kredit": max_kredit,
+        "wunsch_preis": wunsch_preis, "wunsch_rate": wunsch_rate, "wunsch_nk": wunsch_nk_euro, "wunsch_invest": wunsch_invest, "wunsch_darlehen": wunsch_darlehen,
+        "nk_prozent": nk_prozent_gesamt, "renovierung": renovierung,
         "ein_haupt": gehalt_haupt, "ein_partner": gehalt_partner, "ein_kinder": kindergeld,
         "ein_neben": nebeneinkommen, "ein_sonst": sonstiges, 
         "ein_miete_bestand": miete_bestand_anrechenbar, "ein_miete_neu": miete_neu_calc,
