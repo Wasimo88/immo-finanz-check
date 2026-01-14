@@ -296,7 +296,7 @@ def create_pdf(data):
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# 💾 SPEICHERN & LADEN
+# 💾 SPEICHERN & LADEN LOGIK (KORRIGIERT)
 # ==========================================
 defaults = {
     "kinder": 1, "gehalt_h": 3000, "gehalt_p": 0, "ek": 60000,
@@ -311,9 +311,16 @@ def load_data_callback():
             data = json.load(uploaded)
             for key, value in data.items():
                 st.session_state[key] = value
-            st.toast("✅ Daten erfolgreich geladen!", icon="🎉")
+            
+            # HIER IST DER FIX:
+            # Wir zwingen das Programm, die Werte sofort neu zu berechnen
+            update_lebenshaltung() 
+            update_bewirtschaftung()
+            
+            st.toast("✅ Daten geladen & neu berechnet!", icon="🎉")
         except Exception as e:
             st.error(f"Fehler: {e}")
+
 
 # ==========================================
 # UI & INPUTS
