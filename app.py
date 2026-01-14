@@ -1,21 +1,51 @@
 import streamlit as st
 
-# --- Kofiguration der Seite ---
+# --- Konfiguration der Seite ---
 st.set_page_config(page_title="Haushaltsrechner Pro", layout="wide")
 
 st.title("💰 Haushaltsrechnung & Finanzierungs-Check")
 
 # --- SIDEBAR: Eingabedaten ---
 st.sidebar.header("1. Einkommen & Haushalt")
-gehalt_haupt = st.sidebar.number_input("Gehalt Hauptverdiener (netto)", value=3000, step=50)
-gehalt_partner = st.sidebar.number_input("Gehalt Partner (netto)", value=520, step=50)
+
+# FIX: min_value=0 verhindert negative Eingaben bei allen Feldern
+
+gehalt_haupt = st.sidebar.number_input(
+    "Gehalt Hauptverdiener (netto)", 
+    value=3000, 
+    step=50, 
+    min_value=0  # Verhindert Minus
+)
+
+gehalt_partner = st.sidebar.number_input(
+    "Gehalt Partner (netto)", 
+    value=520, 
+    step=50, 
+    min_value=0  # Verhindert Minus
+)
 
 # Kinderlogik: Anzahl bestimmt Kindergeld + Ausgabenpauschale
-anzahl_kinder = st.sidebar.number_input("Anzahl Kinder", value=2, min_value=0, step=1)
-kindergeld_pro_kind = 250 # Aktueller Satz 2025
-kindergeld_ges = st.sidebar.number_input("Kindergeld (Gesamt)", value=anzahl_kinder * kindergeld_pro_kind)
+anzahl_kinder = st.sidebar.number_input(
+    "Anzahl Kinder", 
+    value=2, 
+    step=1, 
+    min_value=0  # Verhindert negative Kinder
+)
 
-sonstiges = st.sidebar.number_input("Sonstige Einnahmen (Bonus/Miete)", value=500, step=50)
+kindergeld_pro_kind = 250 # Aktueller Satz 2025
+# Berechnung als Standardwert, aber änderbar (nicht negativ)
+kindergeld_ges = st.sidebar.number_input(
+    "Kindergeld (Gesamt)", 
+    value=anzahl_kinder * kindergeld_pro_kind,
+    min_value=0  # Verhindert Minus
+)
+
+sonstiges = st.sidebar.number_input(
+    "Sonstige Einnahmen (Bonus/Miete)", 
+    value=500, 
+    step=50, 
+    min_value=0  # Verhindert Minus
+)
 
 # Summe Einnahmen berechnen
 summe_einnahmen = gehalt_haupt + gehalt_partner + kindergeld_ges + sonstiges
@@ -23,13 +53,37 @@ summe_einnahmen = gehalt_haupt + gehalt_partner + kindergeld_ges + sonstiges
 st.sidebar.markdown("---")
 st.sidebar.header("2. Aktuelle Wohnsituation")
 st.sidebar.info("Wichtig für den Vergleich 'Miete vs. Eigentum'")
-aktuelle_warmmiete = st.sidebar.number_input("Aktuelle Warmmiete", value=1200, step=50)
-aktuelle_qm = st.sidebar.number_input("Aktuelle Wohnfläche (m²)", value=80, step=5)
+
+aktuelle_warmmiete = st.sidebar.number_input(
+    "Aktuelle Warmmiete", 
+    value=1200, 
+    step=50, 
+    min_value=0
+)
+
+aktuelle_qm = st.sidebar.number_input(
+    "Aktuelle Wohnfläche (m²)", 
+    value=80, 
+    step=5, 
+    min_value=0
+)
 
 st.sidebar.markdown("---")
 st.sidebar.header("3. Neues Objekt (Planung)")
-neue_qm = st.sidebar.number_input("Geplante Wohnfläche (m²)", value=140, step=5)
-rate_wunsch = st.sidebar.number_input("Geschätzte Kreditrate (Bank)", value=1600, step=50)
+
+neue_qm = st.sidebar.number_input(
+    "Geplante Wohnfläche (m²)", 
+    value=140, 
+    step=5, 
+    min_value=0
+)
+
+rate_wunsch = st.sidebar.number_input(
+    "Geschätzte Kreditrate (Bank)", 
+    value=1600, 
+    step=50, 
+    min_value=0
+)
 
 
 # --- HAUPTBEREICH: Ausgaben-Logik ---
@@ -44,7 +98,7 @@ with col1:
     
     # LOGIK: Bank-Pauschalen berechnen
     # 1. Erwachsener = 1000, 2. Erwachsener = 400, pro Kind = 300
-    erwachsene_haushalt = 2 if gehalt_partner > 0 else 1 # Annahme
+    erwachsene_haushalt = 2 if gehalt_partner > 0 else 1 
     pauschale_calc = 1000 + (400 if erwachsene_haushalt > 1 else 0) + (300 * anzahl_kinder)
     
     st.markdown(f"**Vorschlag Bank:** *{pauschale_calc} €* (basierend auf {erwachsene_haushalt} Erw. + {anzahl_kinder} Kindern)")
@@ -52,6 +106,7 @@ with col1:
     ausgabe_lebenshaltung = st.number_input(
         "Lebenshaltungskosten (Pauschale)", 
         value=pauschale_calc,
+        min_value=0, # Auch hier keine negativen Ausgaben
         help="Deckt Essen, Kleidung, Mobilität, Hobby und Gesundheit (z.B. Zuzahlungen Diabetes/Medikamente). Basis: Existenzminimum + Puffer."
     )
     
@@ -63,7 +118,6 @@ with col2:
     st.subheader("Wohnnebenkosten (Neu)")
     
     # LOGIK: Bewirtschaftungskosten (4 € pro qm)
-    # Wenn keine qm angegeben, Standard 120qm annehmen
     calc_basis_qm = neue_qm if neue_qm > 0 else 120
     bewirtschaftung_calc = calc_basis_qm * 4.0 
     
@@ -73,6 +127,7 @@ with col2:
         "Bewirtschaftung (Strom, Heizung, Wasser)", 
         value=float(bewirtschaftung_calc),
         step=10.0,
+        min_value=0.0, # Keine negativen Nebenkosten
         help="Enthält: Heizung, Strom, Wasser, Müll, Grundsteuer, Gebäudeversicherung. Faustformel: 3,50€ - 4,50€ pro qm."
     )
 
@@ -87,6 +142,7 @@ if puffer_calc < 200: puffer_calc = 200 # Minimum Puffer
 ausgabe_puffer = st.number_input(
     "Instandhaltungs-Puffer (Rücklagen)", 
     value=float(puffer_calc),
+    min_value=0.0,
     help="Rücklage für Reparaturen am Haus (Heizung, Dach) oder Ersatzbeschaffung (Waschmaschine, Auto, medizinisches Gerät)."
 )
 
