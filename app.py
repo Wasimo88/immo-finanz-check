@@ -8,64 +8,41 @@ from fpdf import FPDF
 st.set_page_config(page_title="Immo-Finanz Master Pro", layout="wide")
 
 # ==========================================
-# 🧠 INTELLIGENTE BANK-LOGIK
-# ==========================================
-
-def get_bank_richtwert(netto, erwachsene_str, kinder):
-    """
-    Berechnet die Pauschale basierend auf Einkommen (Lifestyle) & Köpfen.
-    """
-    # 1. Basis-Sockelbetrag nach Personen
-    if erwachsene_str == "Alleinstehend":
-        basis = 1000.0
-    else: # Paar
-        basis = 1700.0
-    
-    # Kinder-Zuschlag
-    basis += (kinder * 350.0)
-
-    # 2. Lifestyle-Zuschlag basierend auf Netto-Einkommen
-    # Wer viel verdient, gibt meist mehr aus (Auto, Urlaub, Hobbys)
-    zuschlag = 0.0
-    if netto > 4000:
-        zuschlag += 200 
-    if netto > 6000:
-        zuschlag += 300 
-    if netto > 8000:
-        zuschlag += 400 
-        
-    return basis + zuschlag
-
-# CALLBACKS (Hier passiert die Magie)
-def update_lebenshaltung():
-    # Wir holen uns ALLE Einkommensdaten, auch wenn sie weiter unten stehen
-    h = st.session_state.get("sb_gehalt_h", 3000)
-    p = st.session_state.get("sb_gehalt_p", 0)
-    k = st.session_state.get("sb_kinder", 0) * 250
-    n = st.session_state.get("sb_neben", 0)
-    s = st.session_state.get("sb_sonst", 0)
-    
-    total_netto = h + p + k + n + s
-    
-    erw = st.session_state.sb_erwachsene
-    kind = st.session_state.sb_kinder
-    
-    # Berechnen und setzen
-    neuer_wert = get_bank_richtwert(total_netto, erw, kind)
-    st.session_state.exp_p_lebenshaltung = float(neuer_wert)
-
-def update_bewirtschaftung():
-    qm = st.session_state.sb_wohnflaeche
-    st.session_state.exp_bewirt = float(qm * 4.0)
-
-# ==========================================
-# 🛠 HELFER
+# 🛠 HELFER & CALLBACKS
 # ==========================================
 def eur(wert):
     return f"{wert:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
 
 def pdf_eur(wert):
     return f"{wert:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " EUR"
+
+def update_lebenshaltung():
+    erw = st.session_state.sb_erwachsene
+    kind = st.session_state.sb_kinder
+    
+    # Einkommens-Logik holen
+    h = st.session_state.get("sb_gehalt_h", 0)
+    p = st.session_state.get("sb_gehalt_p", 0)
+    k = st.session_state.get("sb_kinder", 0) * 250
+    n = st.session_state.get("sb_neben", 0)
+    s = st.session_state.get("sb_sonst", 0)
+    total_netto = h + p + k + n + s
+
+    # 1. Basis
+    basis = 1000.0 if erw == "Alleinstehend" else 1700.0
+    basis += (kind * 350.0)
+
+    # 2. Lifestyle-Zuschlag
+    zuschlag = 0.0
+    if total_netto > 4000: zuschlag += 200 
+    if total_netto > 6000: zuschlag += 300 
+    if total_netto > 8000: zuschlag += 400 
+    
+    st.session_state.exp_p_lebenshaltung = float(basis + zuschlag)
+
+def update_bewirtschaftung():
+    qm = st.session_state.sb_wohnflaeche
+    st.session_state.exp_bewirt = float(qm * 4.0)
 
 # ==========================================
 # 🔒 PASSWORD
@@ -92,7 +69,7 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 📄 PDF GENERATOR
+# 📄 PDF GENERATOR (OPTIMIERT)
 # ==========================================
 class PDF(FPDF):
     def header(self):
@@ -137,8 +114,39 @@ def create_pdf(data):
     pdf.set_font("Arial", "B", 12)
     pdf.set_text_color(*col_header)
     pdf.cell(0, 8, txt("1. Monatliche Haushaltsrechnung"), 0, 1, 'L', True)
+    pdf.ln(4) # Etwas Abstand nach dem grauen Balken
+
+    # --- EINNAHMEN (KOMPAKT) ---
+    # Hier haben wir die "Doppelte" Überschrift entfernt!
+    pdf.set_font("Arial", "B", 10)
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(100, 6, txt("Gesamteinnahmen (Netto):"))
+    pdf.set_text_color(0, 100, 0) # Grün
+    pdf.cell(30, 6, txt(f"+ {pdf_eur(data['ein_total'])}"), 0, 1, 'R')
+    
+    # Details String bauen
+    details_list = []
+    if data['ein_haupt'] > 0: details_list.append(f"Gehalt Haupt: {pdf_eur(data['ein_haupt'])}")
+    if data['ein_partner'] > 0: details_list.append(f"Gehalt Partner: {pdf_eur(data['ein_partner'])}")
+    if data['ein_kinder'] > 0: details_list.append(f"Kindergeld: {pdf_eur(data['ein_kinder'])}")
+    if data['ein_neben'] > 0: details_list.append(f"Nebeneinkunft: {pdf_eur(data['ein_neben'])}")
+    if data['ein_sonst'] > 0: details_list.append(f"Sonstiges: {pdf_eur(data['ein_sonst'])}")
+    if data['ein_miete_bestand'] > 0: details_list.append(f"Miete Bestand: {pdf_eur(data['ein_miete_bestand'])}")
+    if data['ein_miete_neu'] > 0: details_list.append(f"Miete Neu (Kalk.): {pdf_eur(data['ein_miete_neu'])}")
+    
+    details_str = ", ".join(details_list)
+    
+    # Details anzeigen (klein und grau)
+    pdf.set_font("Arial", "I", 8)
+    pdf.set_text_color(100, 100, 100)
+    pdf.multi_cell(0, 5, txt(f"(Zusammensetzung: {details_str})"))
     pdf.ln(2)
 
+    # --- AUSGABEN (DETAILLIERT) ---
+    pdf.set_text_color(*col_text)
+    pdf.set_font("Arial", "B", 10)
+    pdf.cell(0, 6, txt("Ausgaben (Detailliert):"), 0, 1)
+    
     def row(label, val, note=""):
         pdf.set_font("Arial", "", 10)
         pdf.set_text_color(0, 0, 0)
@@ -150,43 +158,13 @@ def create_pdf(data):
             pdf.cell(60, 6, txt(f"  ({note})"), 0, 0, 'L')
         pdf.ln()
 
-    # EINNAHMEN
-    pdf.set_text_color(*col_text)
-    pdf.set_font("Arial", "B", 10)
-    pdf.cell(0, 6, txt("Einnahmen (Detailliert):"), 0, 1)
-
-    details_list = []
-    if data['ein_haupt'] > 0: details_list.append(f"Gehalt Haupt: {pdf_eur(data['ein_haupt'])}")
-    if data['ein_partner'] > 0: details_list.append(f"Gehalt Partner: {pdf_eur(data['ein_partner'])}")
-    if data['ein_kinder'] > 0: details_list.append(f"Kindergeld: {pdf_eur(data['ein_kinder'])}")
-    if data['ein_neben'] > 0: details_list.append(f"Nebeneinkunft: {pdf_eur(data['ein_neben'])}")
-    if data['ein_sonst'] > 0: details_list.append(f"Sonstiges: {pdf_eur(data['ein_sonst'])}")
-    if data['ein_miete_bestand'] > 0: details_list.append(f"Miete Bestand: {pdf_eur(data['ein_miete_bestand'])}")
-    if data['ein_miete_neu'] > 0: details_list.append(f"Miete Neu (Kalk.): {pdf_eur(data['ein_miete_neu'])}")
-    
-    details_str = ", ".join(details_list)
-
-    pdf.set_font("Arial", "B", 10)
-    pdf.cell(100, 6, txt("Gesamteinnahmen (Netto):"))
-    pdf.set_text_color(0, 100, 0)
-    pdf.cell(30, 6, txt(f"+ {pdf_eur(data['ein_total'])}"), 0, 1, 'R')
-    
-    pdf.set_font("Arial", "I", 8)
-    pdf.set_text_color(100, 100, 100)
-    pdf.multi_cell(0, 5, txt(f"(Zusammensetzung: {details_str})"))
-    pdf.ln(2)
-
-    # AUSGABEN
-    pdf.set_text_color(*col_text)
-    pdf.set_font("Arial", "B", 10)
-    pdf.cell(0, 6, txt("Ausgaben (Detailliert):"), 0, 1)
-    
+    # Linie oben
     pdf.cell(100, 0, "", "T")
     pdf.cell(30, 0, "", "T")
     pdf.ln(2)
 
     row("Lebenshaltung (Pauschale)", data['aus_leben'], "Nahrung, Kleidung, Gesundheit")
-    row("Bewirtschaftung (Hauskosten)", data['aus_bewirt'], f"Heizung, Wasser, Müll ({data['qm']} qm)")
+    row("Bewirtschaftung (Hauskosten)", data['aus_bewirt'], f"Heizung, Wasser ({data['qm']} qm)")
     if data['aus_miete'] > 0: row("Aktuelle Kaltmiete", data['aus_miete'], "Bleibt bestehen")
     if data['aus_bestand'] > 0: row("Rate Bestandskredit", data['aus_bestand'])
     if data['aus_bauspar'] > 0: row("Sparrate (Pflicht)", data['aus_bauspar'], "Tilgungsaussetzung")
@@ -194,10 +172,11 @@ def create_pdf(data):
     row("Puffer / Rücklagen", data['aus_puffer'])
 
     pdf.ln(1)
+    # Summe Ausgaben
     pdf.set_font("Arial", "B", 10)
     pdf.set_text_color(0, 0, 0)
     pdf.cell(100, 6, txt("Summe Ausgaben:"))
-    pdf.set_text_color(180, 0, 0)
+    pdf.set_text_color(180, 0, 0) # Rot
     pdf.cell(30, 6, txt(f"- {pdf_eur(data['aus_total'])}"), 0, 1, 'R')
 
     # ERGEBNIS
@@ -221,6 +200,8 @@ def create_pdf(data):
          pdf.set_font("Arial", "", 10)
          pdf.cell(100, 6, txt("Bisherige Warmmiete:"))
          pdf.cell(30, 6, txt(pdf_eur(data['alt_warm'])), 0, 1, 'R')
+         
+         # Expliziter Text für Klarheit
          pdf.cell(100, 6, txt("Neue Belastung (Rate + NK + Puffer):"))
          pdf.cell(30, 6, txt(pdf_eur(data['neu_last'])), 0, 1, 'R')
          
@@ -296,7 +277,7 @@ def create_pdf(data):
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# 💾 SPEICHERN & LADEN LOGIK (KORRIGIERT)
+# 💾 SPEICHERN & LADEN
 # ==========================================
 defaults = {
     "kinder": 1, "gehalt_h": 3000, "gehalt_p": 0, "ek": 60000,
@@ -311,16 +292,12 @@ def load_data_callback():
             data = json.load(uploaded)
             for key, value in data.items():
                 st.session_state[key] = value
-            
-            # HIER IST DER FIX:
-            # Wir zwingen das Programm, die Werte sofort neu zu berechnen
-            update_lebenshaltung() 
+            # HIER: Berechnung nach Laden anstoßen
+            update_lebenshaltung()
             update_bewirtschaftung()
-            
             st.toast("✅ Daten geladen & neu berechnet!", icon="🎉")
         except Exception as e:
             st.error(f"Fehler: {e}")
-
 
 # ==========================================
 # UI & INPUTS
@@ -369,7 +346,6 @@ else:
 # --- SIDEBAR: EINKOMMEN ---
 st.sidebar.header("2. Einkommen (Netto)")
 if "sb_gehalt_h" not in st.session_state: st.session_state.sb_gehalt_h = defaults["gehalt_h"]
-# HIER IST DER FIX: on_change=update_lebenshaltung
 gehalt_haupt = st.sidebar.number_input("Gehalt Haupt", step=50, min_value=0, key="sb_gehalt_h", on_change=update_lebenshaltung)
 
 if "sb_erwachsene" not in st.session_state: st.session_state.sb_erwachsene = "Paar (2 Personen)"
@@ -378,7 +354,6 @@ anzahl_erwachsene = st.sidebar.radio("Personen", ["Alleinstehend", "Paar (2 Pers
 gehalt_partner = 0
 if anzahl_erwachsene == "Paar (2 Personen)":
     if "sb_gehalt_p" not in st.session_state: st.session_state.sb_gehalt_p = defaults["gehalt_p"]
-    # HIER IST DER FIX: on_change=update_lebenshaltung
     gehalt_partner = st.sidebar.number_input("Gehalt Partner", step=50, min_value=0, key="sb_gehalt_p", on_change=update_lebenshaltung)
 
 if "sb_kinder" not in st.session_state: st.session_state.sb_kinder = defaults["kinder"]
@@ -386,11 +361,9 @@ anzahl_kinder = st.sidebar.number_input("Kinder", step=1, min_value=0, key="sb_k
 kindergeld = anzahl_kinder * 250
 
 if "sb_neben" not in st.session_state: st.session_state.sb_neben = 0
-# HIER IST DER FIX: on_change=update_lebenshaltung
 nebeneinkommen = st.sidebar.number_input("Minijob / Nebentätigkeit", step=50, min_value=0, key="sb_neben", on_change=update_lebenshaltung)
 
 if "sb_sonst" not in st.session_state: st.session_state.sb_sonst = 0
-# HIER IST DER FIX: on_change=update_lebenshaltung
 sonstiges = st.sidebar.number_input("Sonstiges / Bonus", step=50, min_value=0, key="sb_sonst", on_change=update_lebenshaltung)
 
 # --- SIDEBAR: AUSGABEN ---
@@ -399,9 +372,18 @@ st.sidebar.header("3. Ausgaben (Bank-Logik)")
 
 # ZWISCHENBERECHNUNG (Nötig für Info-Text)
 aktuelles_gesamt_netto = gehalt_haupt + gehalt_partner + kindergeld + nebeneinkommen + sonstiges
-bank_richtwert = get_bank_richtwert(aktuelles_gesamt_netto, anzahl_erwachsene, anzahl_kinder)
+# Kopieren der Funktion hier rein für direkten Zugriff
+def get_bank_richtwert_local(netto, erw, kind):
+    basis = 1000.0 if erw == "Alleinstehend" else 1700.0
+    basis += (kind * 350.0)
+    zuschlag = 0.0
+    if netto > 4000: zuschlag += 200 
+    if netto > 6000: zuschlag += 300 
+    if netto > 8000: zuschlag += 400 
+    return basis + zuschlag
 
-# Initialisierung
+bank_richtwert = get_bank_richtwert_local(aktuelles_gesamt_netto, anzahl_erwachsene, anzahl_kinder)
+
 if "exp_p_lebenshaltung" not in st.session_state: update_lebenshaltung()
 if "exp_bewirt" not in st.session_state: update_bewirtschaftung()
 
