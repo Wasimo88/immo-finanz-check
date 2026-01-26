@@ -20,7 +20,6 @@ def update_lebenshaltung():
     erw = st.session_state.sb_erwachsene
     kind = st.session_state.sb_kinder
     
-    # Einkommens-Logik holen
     h = st.session_state.get("sb_gehalt_h", 0)
     p = st.session_state.get("sb_gehalt_p", 0)
     k = st.session_state.get("sb_kinder", 0) * 250
@@ -28,11 +27,9 @@ def update_lebenshaltung():
     s = st.session_state.get("sb_sonst", 0)
     total_netto = h + p + k + n + s
 
-    # 1. Basis
     basis = 1000.0 if erw == "Alleinstehend" else 1700.0
     basis += (kind * 350.0)
 
-    # 2. Lifestyle-Zuschlag
     zuschlag = 0.0
     if total_netto > 4000: zuschlag += 200 
     if total_netto > 6000: zuschlag += 300 
@@ -116,7 +113,7 @@ def create_pdf(data):
     pdf.cell(0, 8, txt("1. Monatliche Haushaltsrechnung"), 0, 1, 'L', True)
     pdf.ln(4)
 
-    # EINNAHMEN KOMPAKT
+    # Einnahmen
     pdf.set_font("Arial", "B", 10)
     pdf.set_text_color(0, 0, 0)
     pdf.cell(100, 6, txt("Gesamteinnahmen (Netto):"))
@@ -138,7 +135,7 @@ def create_pdf(data):
     pdf.multi_cell(0, 5, txt(f"(Zusammensetzung: {details_str})"))
     pdf.ln(2)
 
-    # AUSGABEN
+    # Ausgaben
     pdf.set_text_color(*col_text)
     pdf.set_font("Arial", "B", 10)
     pdf.cell(0, 6, txt("Ausgaben (Detailliert):"), 0, 1)
@@ -173,7 +170,7 @@ def create_pdf(data):
     pdf.set_text_color(180, 0, 0)
     pdf.cell(30, 6, txt(f"- {pdf_eur(data['aus_total'])}"), 0, 1, 'R')
 
-    # ERGEBNIS
+    # ERGEBNIS HAUSHALT
     pdf.ln(4)
     pdf.set_fill_color(230, 240, 255)
     pdf.set_font("Arial", "B", 12)
@@ -182,7 +179,7 @@ def create_pdf(data):
     pdf.cell(70, 10, txt(f"{pdf_eur(data['frei'])}"), 0, 1, 'R', True)
     pdf.ln(8)
 
-    # VERGLEICH
+    # 2. VERGLEICH
     if data['diff_miete'] is not None:
          pdf.set_fill_color(*col_fill)
          pdf.set_font("Arial", "B", 12)
@@ -208,29 +205,21 @@ def create_pdf(data):
              pdf.cell(0, 8, txt(f"-> Ersparnis: {pdf_eur(abs(diff))}"), 0, 1)
          pdf.ln(5)
 
-    # 3. WUNSCH OBJEKT
-# LOGIK FÜR NUMMERIERUNG
-    # Wenn Abschnitt 2 (Vergleich) gedruckt wurde, ist der nächste 3. Sonst 2.
-    nummer_plan = "3"
-    if data['diff_miete'] is None:
-        nummer_plan = "2"
-
-    # 3. (oder 2.) WUNSCH OBJEKT & FINANZIERUNGSAUFBAU
+    # 3. WUNSCH OBJEKT & FINANZIERUNGSAUFBAU (Falls vorhanden)
+    next_section_num = 3 # Standard Startnummer
     if data['wunsch_preis'] > 0:
         pdf.set_fill_color(*col_fill)
         pdf.set_font("Arial", "B", 12)
         pdf.set_text_color(*col_header)
-        # Hier nutzen wir die variable Nummer
-        pdf.cell(0, 8, txt(f"{nummer_plan}. Finanzierungsplan Wunsch-Objekt"), 0, 1, 'L', True)
+        pdf.cell(0, 8, txt(f"{next_section_num}. Finanzierungsplan Wunsch-Objekt"), 0, 1, 'L', True)
         pdf.ln(2)
+        next_section_num += 1 # Nächste Nummer erhöhen
         
         pdf.set_text_color(0,0,0)
         pdf.set_font("Arial", "", 10)
         
-        # Tabelle für Finanzbedarf
         pdf.cell(100, 6, txt("Kaufpreis:"))
         pdf.cell(30, 6, txt(pdf_eur(data['wunsch_preis'])), 0, 1, 'R')
-        
         pdf.cell(100, 6, txt(f"Kaufnebenkosten ({data['nk_prozent']:.2f} %):"))
         pdf.cell(30, 6, txt(f"+ {pdf_eur(data['wunsch_nk'])}"), 0, 1, 'R')
         
@@ -265,28 +254,41 @@ def create_pdf(data):
             pdf.set_fill_color(200, 255, 200)
             pdf.set_text_color(0, 100, 0)
             pdf.set_font("Arial", "B", 12)
-            # HIER GEÄNDERT: Kein Emoji mehr, sondern Text
             pdf.cell(0, 10, txt("Ergebnis: MACHBAR (Im Budget)"), 1, 1, 'C', True)
         else:
             pdf.set_fill_color(255, 200, 200)
             pdf.set_text_color(180, 0, 0)
             pdf.set_font("Arial", "B", 12)
-            # HIER GEÄNDERT: Kein Emoji mehr
             pdf.cell(0, 10, txt(f"Ergebnis: ÜBERSTEIGT BUDGET (Fehlt: {pdf_eur(diff_wunsch)})"), 1, 1, 'C', True)
-
-    # MAXIMALER PREIS (Falls kein Wunschobjekt)
-    else:
-        pdf.set_fill_color(*col_fill)
-        pdf.set_font("Arial", "B", 12)
-        pdf.set_text_color(*col_header)
-        # Auch hier Nummerierung anpassen
-        pdf.cell(0, 8, txt(f"{nummer_plan}. Maximaler Kaufpreis (Kalkulation)"), 0, 1, 'L', True)
-        pdf.ln(2)
         
-        pdf.set_text_color(0,0,0)
-        pdf.set_font("Arial", "", 10)
-        pdf.cell(120, 10, txt("Max. Kaufpreis der Immobilie:"), 1)
-        pdf.cell(70, 10, txt(f"{pdf_eur(data['kaufpreis'])}"), 1, 1, 'R')
+        pdf.ln(5) # Abstand vor nächstem Block
+
+    # 4. (oder 3.) MAXIMALER PREIS - JETZT IMMER SICHTBAR
+    pdf.set_fill_color(*col_fill)
+    pdf.set_font("Arial", "B", 12)
+    pdf.set_text_color(*col_header)
+    
+    # Titel je nach Kontext anpassen
+    titel_max = f"{next_section_num}. Maximaler Kaufpreis (Kalkulation)"
+    if data['wunsch_preis'] > 0:
+        titel_max = f"{next_section_num}. Dein maximal mögliches Budget (Theoretisch)"
+        
+    pdf.cell(0, 8, txt(titel_max), 0, 1, 'L', True)
+    pdf.ln(2)
+    
+    pdf.set_text_color(0,0,0)
+    pdf.set_font("Arial", "", 10)
+    pdf.cell(120, 10, txt("Max. Kaufpreis der Immobilie:"), 1)
+    pdf.cell(70, 10, txt(f"{pdf_eur(data['kaufpreis'])}"), 1, 1, 'R')
+    pdf.cell(120, 8, txt("dazu Kaufnebenkosten:"), 1)
+    pdf.cell(70, 8, txt(f"+ {pdf_eur(data['nk'])}"), 1, 1, 'R')
+    pdf.cell(120, 8, txt("abzüglich Eigenkapital:"), 1)
+    pdf.cell(70, 8, txt(f"- {pdf_eur(data['ek'])}"), 1, 1, 'R')
+    
+    pdf.set_font("Arial", "B", 11)
+    pdf.set_fill_color(220, 220, 220)
+    pdf.cell(120, 10, txt("Notwendiges Bankdarlehen:"), 1, 0, 'L', True)
+    pdf.cell(70, 10, txt(f"{pdf_eur(data['kredit'])}"), 1, 1, 'R', True)
 
     pdf.ln(10)
     pdf.set_text_color(100, 100, 100)
@@ -577,7 +579,6 @@ with col2:
     json_str = json.dumps({k: v for k,v in save_data.items() if k.startswith(("sb_", "exp_", "renovierung"))})
     st.download_button("💾 Daten sichern (JSON)", json_str, f"{safe_name}_Daten.json", "application/json")
 
-# HIER IST DIE WIEDERHERGESTELLTE GRAFIK:
 st.divider()
 fig = px.bar(
     x=["Einnahmen", "Ausgaben", "Budget"],
@@ -590,4 +591,3 @@ if wunsch_preis > 0:
     fig.add_hline(y=wunsch_rate, line_dash="dot", annotation_text="Nötige Rate (Wunsch)", line_color="orange")
 fig.update_layout(showlegend=False)
 st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
-
