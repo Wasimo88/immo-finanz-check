@@ -20,16 +20,22 @@ def update_lebenshaltung():
     erw = st.session_state.sb_erwachsene
     kind = st.session_state.sb_kinder
     
+    # Einkommens-Logik holen
     h = st.session_state.get("sb_gehalt_h", 0)
     p = st.session_state.get("sb_gehalt_p", 0)
     k = st.session_state.get("sb_kinder", 0) * 250
+    kz = st.session_state.get("sb_kinderzuschlag", 0)
+    wg = st.session_state.get("sb_wohngeld", 0)
     n = st.session_state.get("sb_neben", 0)
     s = st.session_state.get("sb_sonst", 0)
-    total_netto = h + p + k + n + s
+    
+    total_netto = h + p + k + kz + wg + n + s
 
+    # 1. Basis
     basis = 1000.0 if erw == "Alleinstehend" else 1700.0
     basis += (kind * 350.0)
 
+    # 2. Lifestyle-Zuschlag
     zuschlag = 0.0
     if total_netto > 4000: zuschlag += 200 
     if total_netto > 6000: zuschlag += 300 
@@ -124,6 +130,11 @@ def create_pdf(data):
     if data['ein_haupt'] > 0: details_list.append(f"Gehalt Haupt: {pdf_eur(data['ein_haupt'])}")
     if data['ein_partner'] > 0: details_list.append(f"Gehalt Partner: {pdf_eur(data['ein_partner'])}")
     if data['ein_kinder'] > 0: details_list.append(f"Kindergeld: {pdf_eur(data['ein_kinder'])}")
+    
+    # Sozialleistungen markieren
+    if data['ein_kinderzuschlag'] > 0: details_list.append(f"Kinderzuschlag*: {pdf_eur(data['ein_kinderzuschlag'])}")
+    if data['ein_wohngeld'] > 0: details_list.append(f"Wohngeld*: {pdf_eur(data['ein_wohngeld'])}")
+    
     if data['ein_neben'] > 0: details_list.append(f"Nebeneinkunft: {pdf_eur(data['ein_neben'])}")
     if data['ein_sonst'] > 0: details_list.append(f"Sonstiges: {pdf_eur(data['ein_sonst'])}")
     if data['ein_miete_bestand'] > 0: details_list.append(f"Miete Bestand: {pdf_eur(data['ein_miete_bestand'])}")
@@ -133,6 +144,15 @@ def create_pdf(data):
     pdf.set_font("Arial", "I", 8)
     pdf.set_text_color(100, 100, 100)
     pdf.multi_cell(0, 5, txt(f"(Zusammensetzung: {details_str})"))
+    
+    # HINWEIS SOZIALLEISTUNGEN IM PDF
+    if data['sozial_summe'] > 0:
+        pdf.ln(2)
+        pdf.set_text_color(180, 100, 0) # Dunkelorange
+        pdf.set_font("Arial", "B", 9)
+        warn_txt = f"* HINWEIS: In den Einnahmen sind {pdf_eur(data['sozial_summe'])} Sozialleistungen (Wohngeld/Kinderzuschlag) enthalten. Diese werden von Banken oft NICHT als nachhaltiges Einkommen für den Kredit gewertet!"
+        pdf.multi_cell(0, 5, txt(warn_txt))
+    
     pdf.ln(2)
 
     # AUSGABEN
@@ -220,7 +240,6 @@ def create_pdf(data):
         
         pdf.cell(100, 6, txt("Kaufpreis:"))
         pdf.cell(30, 6, txt(pdf_eur(data['wunsch_preis'])), 0, 1, 'R')
-        
         pdf.cell(100, 6, txt(f"Kaufnebenkosten ({data['nk_prozent']:.2f} %):"))
         pdf.cell(30, 6, txt(f"+ {pdf_eur(data['wunsch_nk'])}"), 0, 1, 'R')
         
@@ -231,7 +250,6 @@ def create_pdf(data):
         pdf.set_font("Arial", "B", 10)
         pdf.cell(100, 6, txt("Gesamtkosten (Investition):"), "T")
         pdf.cell(30, 6, txt(f"= {pdf_eur(data['wunsch_invest'])}"), "T", 1, 'R')
-        
         pdf.set_font("Arial", "", 10)
         pdf.cell(100, 6, txt("Eigenkapital:"))
         pdf.cell(30, 6, txt(f"- {pdf_eur(data['ek'])}"), 0, 1, 'R')
@@ -280,7 +298,6 @@ def create_pdf(data):
     pdf.cell(120, 10, txt("Max. Kaufpreis der Immobilie:"), 1)
     pdf.cell(70, 10, txt(f"{pdf_eur(data['kaufpreis'])}"), 1, 1, 'R')
     pdf.cell(120, 8, txt("dazu Kaufnebenkosten:"), 1)
-    # HIER WAR DER FEHLER: JETZT data['nk'] STATT FEHLENDEM WERT
     pdf.cell(70, 8, txt(f"+ {pdf_eur(data['nk'])}"), 1, 1, 'R')
     pdf.cell(120, 8, txt("abzüglich Eigenkapital:"), 1)
     pdf.cell(70, 8, txt(f"- {pdf_eur(data['ek'])}"), 1, 1, 'R')
@@ -331,7 +348,7 @@ with st.expander("📂 Speichern / Laden", expanded=False):
     with col_dl:
         st.info("Download unten!")
 
-# --- SIDEBAR ---
+# --- SIDEBAR: 1. PROJEKT ---
 st.sidebar.header("1. Projekt & Nutzung")
 if "sb_name" not in st.session_state: st.session_state.sb_name = defaults["kunde"]
 kunden_name = st.sidebar.text_input("Name", key="sb_name")
@@ -363,6 +380,7 @@ else:
     if "sb_neue_miete_ka" not in st.session_state: st.session_state.sb_neue_miete_ka = 600
     neue_miete_einnahme = st.sidebar.number_input("Mieteinnahme Neu (Kalt)", step=50, min_value=0, key="sb_neue_miete_ka")
 
+# --- SIDEBAR: 2. EINKOMMEN ---
 st.sidebar.header("2. Einkommen (Netto)")
 if "sb_gehalt_h" not in st.session_state: st.session_state.sb_gehalt_h = defaults["gehalt_h"]
 gehalt_haupt = st.sidebar.number_input("Gehalt Haupt", step=50, min_value=0, key="sb_gehalt_h", on_change=update_lebenshaltung)
@@ -379,15 +397,23 @@ if "sb_kinder" not in st.session_state: st.session_state.sb_kinder = defaults["k
 anzahl_kinder = st.sidebar.number_input("Kinder", step=1, min_value=0, key="sb_kinder", on_change=update_lebenshaltung)
 kindergeld = anzahl_kinder * 250
 
+# SOZIALLEISTUNGEN
+if "sb_kinderzuschlag" not in st.session_state: st.session_state.sb_kinderzuschlag = 0
+kinderzuschlag = st.sidebar.number_input("Kinderzuschlag (Sozialleistung)", step=50, min_value=0, key="sb_kinderzuschlag", on_change=update_lebenshaltung, help="Wird von Banken oft nicht als dauerhaftes Einkommen akzeptiert.")
+
+if "sb_wohngeld" not in st.session_state: st.session_state.sb_wohngeld = 0
+wohngeld = st.sidebar.number_input("Wohngeld (Sozialleistung)", step=50, min_value=0, key="sb_wohngeld", on_change=update_lebenshaltung, help="Zweckgebunden. Fällt bei Immobilienkauf oft weg oder wird von Bank nicht akzeptiert.")
+
 if "sb_neben" not in st.session_state: st.session_state.sb_neben = 0
 nebeneinkommen = st.sidebar.number_input("Minijob / Nebentätigkeit", step=50, min_value=0, key="sb_neben", on_change=update_lebenshaltung)
 if "sb_sonst" not in st.session_state: st.session_state.sb_sonst = 0
 sonstiges = st.sidebar.number_input("Sonstiges / Bonus", step=50, min_value=0, key="sb_sonst", on_change=update_lebenshaltung)
 
+# --- SIDEBAR: 3. AUSGABEN ---
 st.sidebar.markdown("---")
 st.sidebar.header("3. Ausgaben (Bank-Logik)")
 
-aktuelles_gesamt_netto = gehalt_haupt + gehalt_partner + kindergeld + nebeneinkommen + sonstiges
+aktuelles_gesamt_netto = gehalt_haupt + gehalt_partner + kindergeld + kinderzuschlag + wohngeld + nebeneinkommen + sonstiges
 def get_bank_richtwert_local(netto, erw, kind):
     basis = 1000.0 if erw == "Alleinstehend" else 1700.0
     basis += (kind * 350.0)
@@ -422,6 +448,7 @@ konsum = st.sidebar.number_input("Konsumkredite (Rate)", step=50, min_value=0, k
 if "sb_bauspar" not in st.session_state: st.session_state.sb_bauspar = 0
 bauspar = st.sidebar.number_input("Sparraten Pflicht", step=50, min_value=0, key="sb_bauspar")
 
+# --- SIDEBAR: 4. KAPITAL & KREDIT ---
 st.sidebar.header("4. Eigenkapital & Zinsen")
 if "sb_ek" not in st.session_state: st.session_state.sb_ek = defaults["ek"]
 eigenkapital = st.sidebar.number_input("Eigenkapital", step=1000, min_value=0, key="sb_ek")
@@ -435,6 +462,7 @@ if st.sidebar.checkbox("Immobilienbestand?", key="sb_hat_bestand"):
     rate_bestand = st.sidebar.number_input("Rate Bestand", value=0, min_value=0)
     miete_bestand_anrechenbar = miete_raw * 0.75 
 
+# --- SIDEBAR: 5. KAUFNEBENKOSTEN ---
 st.sidebar.header("5. Kaufnebenkosten (Variabel)")
 if "sb_grunderwerb" not in st.session_state: st.session_state.sb_grunderwerb = defaults["sb_grunderwerb"]
 grunderwerb = st.sidebar.number_input("Grunderwerbsteuer (%)", step=0.5, min_value=0.0, key="sb_grunderwerb")
@@ -445,6 +473,7 @@ makler = st.sidebar.number_input("Maklerprovision (%)", step=0.1, min_value=0.0,
 nk_prozent_gesamt = grunderwerb + notar + makler
 st.sidebar.caption(f"Gesamt-Nebenkosten: **{nk_prozent_gesamt:.2f} %**")
 
+# --- SIDEBAR: 6. OBJEKT ---
 st.sidebar.header("6. Konkretes Objekt prüfen")
 if "sb_wunsch_preis" not in st.session_state: st.session_state.sb_wunsch_preis = 0
 wunsch_preis = st.sidebar.number_input("Kaufpreis Objekt", step=5000, min_value=0, key="sb_wunsch_preis")
@@ -459,15 +488,18 @@ if nutzungsart != OPTIONS_NUTZUNG[0]:
     miete_neu_calc = neue_miete_einnahme * 0.80 
 belastung_alte_miete = aktuelle_warmmiete if nutzungsart == OPTIONS_NUTZUNG[2] else 0.0
 
-einnahmen = gehalt_haupt + gehalt_partner + kindergeld + nebeneinkommen + sonstiges + miete_bestand_anrechenbar + miete_neu_calc
+einnahmen = gehalt_haupt + gehalt_partner + kindergeld + kinderzuschlag + wohngeld + nebeneinkommen + sonstiges + miete_bestand_anrechenbar + miete_neu_calc
 ausgaben = var_lebenshaltung + var_bewirtschaftung + var_puffer + konsum + bauspar + rate_bestand + belastung_alte_miete
 frei = einnahmen - ausgaben
 annuitaet = zins + tilgung
 
+# Sozialleistungs-Check (Bank-Sicht)
+sozial_summe = kinderzuschlag + wohngeld
+frei_bank = frei - sozial_summe
+
 # Max Kaufpreis
 max_kredit = (frei * 12 * 100) / annuitaet if (frei > 0 and annuitaet > 0) else 0
 max_preis = (max_kredit + eigenkapital) / (1 + (nk_prozent_gesamt/100))
-# WICHTIG: Hier berechnen wir die absoluten Nebenkosten für den Max-Preis für das PDF
 max_nk_euro = max_preis * (nk_prozent_gesamt / 100)
 
 # Wunsch Objekt
@@ -491,7 +523,7 @@ if aktuelle_warmmiete > 0 and nutzungsart != OPTIONS_NUTZUNG[2]:
     neue_wohnkosten = frei + var_bewirtschaftung + var_puffer
     diff_miete = neue_wohnkosten - aktuelle_warmmiete
 
-# UI
+# UI ANZEIGE
 col1, col2 = st.columns(2)
 with col1:
     st.markdown(f"### 🎯 Analyse für: {kunden_name}")
@@ -501,6 +533,8 @@ with col1:
     if gehalt_haupt > 0: ein_liste.append(["Gehalt Haupt", gehalt_haupt])
     if gehalt_partner > 0: ein_liste.append(["Gehalt Partner", gehalt_partner])
     if kindergeld > 0: ein_liste.append(["Kindergeld", kindergeld])
+    if kinderzuschlag > 0: ein_liste.append(["Kinderzuschlag*", kinderzuschlag])
+    if wohngeld > 0: ein_liste.append(["Wohngeld*", wohngeld])
     if nebeneinkommen > 0: ein_liste.append(["Nebentätigkeit", nebeneinkommen])
     if sonstiges > 0: ein_liste.append(["Sonstiges", sonstiges])
     if miete_bestand_anrechenbar > 0: ein_liste.append(["Miete Bestand (Netto)", miete_bestand_anrechenbar])
@@ -509,6 +543,10 @@ with col1:
     df_in = pd.DataFrame(ein_liste, columns=["Posten", "Betrag"])
     st.dataframe(df_in, hide_index=True, use_container_width=True)
     st.success(f"Einnahmen: **{eur(einnahmen)}**")
+    
+    # WARNUNG WENN SOZIALLEISTUNGEN
+    if sozial_summe > 0:
+        st.warning(f"⚠️ Hinweis: {eur(sozial_summe)} sind Sozialleistungen. Banken setzen oft nur {eur(einnahmen - sozial_summe)} an.")
     
     st.markdown("---")
     df_out = pd.DataFrame({
@@ -523,7 +561,14 @@ with col2:
     if frei < 0:
         st.error(f"⚠️ **Unterdeckung: {eur(abs(frei))}**")
     else:
-        st.info(f"🏦 Verfügbare Rate: **{eur(frei)}**")
+        st.info(f"🏦 Verfügbare Rate (Haushalt): **{eur(frei)}**")
+        
+        # WARNUNG BANK-SICHT
+        if sozial_summe > 0 and frei_bank < 0:
+            st.error(f"❌ Bank-Sicht (ohne Soziall.): Unterdeckung {eur(abs(frei_bank))}")
+        elif sozial_summe > 0:
+            st.warning(f"⚠️ Bank-Sicht (ohne Soziall.): nur {eur(frei_bank)} verfügbar.")
+
         if diff_miete is not None:
             st.markdown("#### Miete vs. Eigentum")
             if diff_miete > 0:
@@ -539,6 +584,9 @@ with col2:
             col_a.metric("Nötige Rate", eur(wunsch_rate))
             if wunsch_rate <= frei:
                 col_b.success("✅ MACHBAR")
+                # Zusatzcheck Bank
+                if sozial_summe > 0 and wunsch_rate > frei_bank:
+                    st.caption("⚠️ Aber kritisch bei Bank ohne Sozialleistungen.")
             else:
                 col_b.error("❌ ZU TEUER")
                 st.caption(f"Fehlt: {eur(wunsch_rate - frei)}")
@@ -557,12 +605,11 @@ with col2:
     pdf_data = {
         "name": kunden_name, "scenario": nutzungsart, "ein_total": einnahmen, "aus_total": ausgaben, 
         "frei": frei, "zins": zins, "tilg": tilgung, "kaufpreis": max_preis, 
-        # HIER WURDE DER SCHLÜSSEL 'NK' HINZUGEFÜGT:
-        "nk": max_nk_euro,
-        "ek": eigenkapital, "kredit": max_kredit,
+        "nk": max_nk_euro, "ek": eigenkapital, "kredit": max_kredit,
         "wunsch_preis": wunsch_preis, "wunsch_rate": wunsch_rate, "wunsch_nk": wunsch_nk_euro, "wunsch_invest": wunsch_invest, "wunsch_darlehen": wunsch_darlehen,
         "nk_prozent": nk_prozent_gesamt, "renovierung": renovierung,
         "ein_haupt": gehalt_haupt, "ein_partner": gehalt_partner, "ein_kinder": kindergeld,
+        "ein_kinderzuschlag": kinderzuschlag, "ein_wohngeld": wohngeld, "sozial_summe": sozial_summe,
         "ein_neben": nebeneinkommen, "ein_sonst": sonstiges, 
         "ein_miete_bestand": miete_bestand_anrechenbar, "ein_miete_neu": miete_neu_calc,
         "aus_leben": var_lebenshaltung, "aus_bewirt": var_bewirtschaftung, "qm": wohnflaeche,
